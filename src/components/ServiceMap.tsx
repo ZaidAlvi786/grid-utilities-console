@@ -2,137 +2,186 @@ import React, { useMemo } from 'react';
 import { parseExcelDate } from '../utils/helpers';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { motion } from 'framer-motion';
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const val = payload[0].value;
+    return (
+      React.createElement('div', { className: 'bg-white/95 backdrop-blur-md p-3 rounded-xl shadow-xl border border-slate-100 flex flex-col gap-1 min-w-[150px] z-50' },
+        React.createElement('p', { className: 'text-[10px] font-bold text-slate-400 uppercase tracking-wider' }, label),
+        React.createElement('p', { className: 'text-xs font-extrabold ' + (val >= 0 ? 'text-green-600' : 'text-red-600') }, 
+          'Margin: ' + (val < 0 ? '-' : '') + '$' + Math.abs(Math.round(val)).toLocaleString()
+        )
+      )
+    );
+  }
+  return null;
+};
 
 export const ServiceMap: React.FC = () => {
   const filters = useSelector((state: RootState) => state.filters);
-  const { workOrders, invoices } = useSelector((state: RootState) => state.db);
+  const { workOrders, invoices, dailyExpenseRate } = useSelector((state: RootState) => state.db);
 
-  const filteredSites = useMemo(() => {
-    const woNumbers = new Set(workOrders.filter(w => {
-      if (filters.generalForeman !== 'All crews' && w.general_foreman !== filters.generalForeman) return false;
-      if (filters.foreman.length > 0 && !filters.foreman.includes(w.foreman)) return false;
-      if (filters.area !== 'All areas' && w.area !== filters.area) return false;
-      // Order date range filters
-      if (w.customer_need_date) {
-        const dateVal = parseExcelDate(w.customer_need_date);
-        if (dateVal) {
-          if (filters.startDate && dateVal < filters.startDate) return false;
-          if (filters.endDate && dateVal > filters.endDate) return false;
+  const { gfData, foremanData } = useMemo(() => {
+    const GFData: Record<string, { name: string; margin: number }> = {};
+    const FData: Record<string, { name: string; gf: string; margin: number }> = {};
+
+    const bookedDatesMap: Record<string, Set<string>> = {};
+    const revenueMap: Record<string, number> = {};
+
+    invoices.forEach(inv => {
+      if (filters.status !== 'All statuses' && inv.status !== filters.status) return;
+      const wo = workOrders.find(w => w.work_order_number === inv.work_order_number);
+      if (wo) {
+        const f = wo.foreman;
+        if (!bookedDatesMap[f]) bookedDatesMap[f] = new Set();
+        if (inv.created_date) {
+          bookedDatesMap[f].add(inv.created_date);
         }
+        if (!revenueMap[f]) revenueMap[f] = 0;
+        revenueMap[f] += inv.total;
       }
-      return true;
-    }).map(w => w.work_order_number));
-
-    return workOrders.filter(w => woNumbers.has(w.work_order_number)).map(w => {
-      const associatedInvoices = invoices.filter(i => i.work_order_number === w.work_order_number);
-      let status: 'Approved' | 'Unapproved' | 'Not yet invoiced' = 'Not yet invoiced';
-      
-      if (associatedInvoices.length > 0) {
-        const approved = associatedInvoices.filter(i => i.status === 'Approved');
-        const unapproved = associatedInvoices.filter(i => i.status === 'Unapproved');
-        
-        if (unapproved.length > 0) {
-          status = 'Unapproved';
-        } else if (approved.length > 0) {
-          status = 'Approved';
-        }
-      }
-
-      return {
-        ...w,
-        invoiceStatus: status,
-      };
     });
-  }, [workOrders, invoices, filters]);
 
-  const boundaries = useMemo(() => {
-    let minLat = 29.6;
-    let maxLat = 30.2;
-    let minLng = -95.9;
-    let maxLng = -95.1;
-    
-    const validPoints = filteredSites.filter(s => s.latitude && s.longitude);
-    if (validPoints.length > 0) {
-      minLat = Math.min(...validPoints.map(p => p.latitude!));
-      maxLat = Math.max(...validPoints.map(p => p.latitude!));
-      minLng = Math.min(...validPoints.map(p => p.longitude!));
-      maxLng = Math.max(...validPoints.map(p => p.longitude!));
-    }
+    workOrders.forEach(wo => {
+      if (wo.customer_need_date) {
+        const dateVal = parseExcelDate(wo.customer_need_date);
+        if (dateVal) {
+          if (filters.startDate && dateVal < filters.startDate) return;
+          if (filters.endDate && dateVal > filters.endDate) return;
+        }
+      }
+      const gf = wo.general_foreman;
+      const f = wo.foreman;
+
+      if (filters.generalForeman !== 'All crews' && gf !== filters.generalForeman) return;
+      if (filters.foreman.length > 0 && !filters.foreman.includes(f)) return;
+      if (filters.area !== 'All areas' && wo.area !== filters.area) return;
+
+      if (!GFData[gf]) {
+        GFData[gf] = { name: gf, margin: 0 };
+      }
+      if (!FData[f]) {
+        FData[f] = { name: f, gf, margin: 0 };
+      }
+    });
+
+    Object.keys(FData).forEach(f => {
+      const node = FData[f];
+      const bookedDays = bookedDatesMap[f] ? bookedDatesMap[f].size : 0;
+      const rev = revenueMap[f] || 0;
+      const exp = bookedDays * dailyExpenseRate;
+      const margin = rev - exp;
+
+      node.margin = margin;
+
+      const gfNode = GFData[node.gf];
+      if (gfNode) {
+        gfNode.margin += margin;
+      }
+    });
+
     return {
-      minLat: minLat - 0.05,
-      maxLat: maxLat + 0.05,
-      minLng: minLng - 0.05,
-      maxLng: maxLng + 0.05,
+      gfData: Object.values(GFData).sort((a, b) => b.margin - a.margin),
+      foremanData: Object.values(FData).sort((a, b) => b.margin - a.margin),
     };
-  }, [filteredSites]);
+  }, [workOrders, invoices, dailyExpenseRate, filters]);
 
-  const projectX = (lng: number) => {
-    return ((lng - boundaries.minLng) / (boundaries.maxLng - boundaries.minLng)) * 500 + 50;
+  const formatYAxis = (tick: number) => {
+    const isNeg = tick < 0;
+    const absVal = Math.abs(tick);
+    if (absVal >= 1000) {
+      return (isNeg ? '-' : '') + '$' + Math.round(absVal / 1000) + 'k';
+    }
+    return (isNeg ? '-' : '') + '$' + Math.round(absVal);
   };
-  const projectY = (lat: number) => {
-    return (1 - (lat - boundaries.minLat) / (boundaries.maxLat - boundaries.minLat)) * 320 + 40;
-  };
-
-  const areaLabels = [
-    { name: 'TOMBALL', lat: 30.1, lng: -95.62 },
-    { name: 'SPRING', lat: 30.08, lng: -95.42 },
-    { name: 'CYPRESS', lat: 29.98, lng: -95.69 },
-    { name: 'KATY', lat: 29.79, lng: -95.8 },
-    { name: 'BEAR CREEK', lat: 29.87, lng: -95.63 },
-    { name: 'SPRING BRANCH', lat: 29.8, lng: -95.49 },
-  ];
-
-  const unapprovedCount = filteredSites.filter(s => s.invoiceStatus === 'Unapproved').length;
 
   return (
-    React.createElement('div', { className: 'bg-white p-6 rounded-xl shadow-sm border border-slate-200 min-h-[450px] relative select-none' },
-      React.createElement('div', { className: 'flex justify-between items-start mb-2' },
-        React.createElement('h2', { className: 'text-lg font-semibold text-slate-800 my-0' }, 'Area of Service'),
-        React.createElement('span', { className: 'text-xs text-slate-400 font-mono mt-1' }, filteredSites.length + ' sites · 6 of 6 areas · ' + unapprovedCount + ' unapproved')
+    React.createElement(motion.div, {
+      initial: { opacity: 0, y: 15 },
+      animate: { opacity: 1, y: 0 },
+      transition: { duration: 0.4 },
+      className: 'bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-6 select-none'
+    },
+      React.createElement('div', { className: 'flex flex-col gap-1' },
+        React.createElement('h2', { className: 'text-lg font-semibold text-slate-800 my-0' }, 'Profit Margin Performance'),
+        React.createElement('p', { className: 'text-xs text-slate-500' }, 'Comparative profit margins for General Foremen and Foremen based on booked days.')
       ),
-      React.createElement('p', { className: 'text-xs text-slate-500 mb-4' }, 'Every work order plotted at its service address, coloured by invoice status. No street basemap - area labels and the scale bar carry the geography.'),
-      React.createElement('div', { className: 'flex gap-4 text-xs font-medium text-slate-600 mb-4' },
-        React.createElement('span', { className: 'flex items-center gap-1.5' },
-          React.createElement('span', { className: 'w-3 h-3 rounded-full bg-blue-600' }), 'Approved'
+      React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-6' },
+        // General Foreman Chart
+        React.createElement('div', { className: 'flex flex-col gap-3' },
+          React.createElement('h3', { className: 'text-xs font-bold text-slate-500 uppercase tracking-wider' }, 'General Foreman'),
+          React.createElement('div', { className: 'h-[220px] w-full' },
+            React.createElement(ResponsiveContainer, { width: '100%', height: '100%' } as any,
+              React.createElement(BarChart, { data: gfData, margin: { top: 10, right: 10, left: -20, bottom: 20 } },
+                React.createElement(CartesianGrid, { strokeDasharray: '3 3', stroke: '#f1f5f9', vertical: false }),
+                React.createElement(XAxis, { 
+                  dataKey: 'name', 
+                  tick: { fill: '#94a3b8', fontSize: 10 },
+                  axisLine: false,
+                  tickLine: false,
+                  interval: 0,
+                  angle: -25,
+                  textAnchor: 'end'
+                }),
+                React.createElement(YAxis, { 
+                  tick: { fill: '#94a3b8', fontSize: 10 },
+                  axisLine: false,
+                  tickLine: false,
+                  tickFormatter: formatYAxis
+                }),
+                React.createElement(Tooltip, { content: React.createElement(CustomTooltip, null), cursor: { fill: '#f8fafc' } }),
+                React.createElement(Bar, { dataKey: 'margin', radius: [4, 4, 0, 0] },
+                  gfData.map((entry, index) => 
+                    React.createElement(Cell, { 
+                      key: `cell-${index}`, 
+                      fill: entry.margin >= 0 ? '#10b981' : '#ef4444' 
+                    })
+                  )
+                )
+              )
+            )
+          )
         ),
-        React.createElement('span', { className: 'flex items-center gap-1.5' },
-          React.createElement('span', { className: 'w-3 h-3 rounded-full bg-red-600' }), 'Unapproved'
-        ),
-        React.createElement('span', { className: 'flex items-center gap-1.5' },
-          React.createElement('span', { className: 'w-3 h-3 rounded-full bg-slate-300' }), 'Not yet invoiced'
-        )
-      ),
-      React.createElement('div', { className: 'relative bg-slate-50 border border-slate-100 rounded-lg overflow-hidden' },
-        React.createElement('svg', { viewBox: '0 0 600 400', className: 'w-full h-[360px]' },
-          areaLabels.map(label =>
-             React.createElement('text', {
-               key: label.name,
-               x: projectX(label.lng),
-               y: projectY(label.lat),
-               textAnchor: 'middle',
-               className: 'fill-slate-400 font-bold font-mono tracking-widest text-[9px]'
-             }, label.name)
-          ),
-          filteredSites.filter(s => s.latitude && s.longitude).map(site =>
-            React.createElement('circle', {
-              key: site.id,
-              cx: projectX(site.longitude!),
-              cy: projectY(site.latitude!),
-              r: 3.5,
-              className: 'cursor-pointer transition-all duration-150 ' +
-                (site.invoiceStatus === 'Approved' ? 'fill-blue-600' :
-                 site.invoiceStatus === 'Unapproved' ? 'fill-red-600' : 'fill-slate-300') +
-                ' hover:stroke-white hover:stroke-2'
-            })
-          ),
-          React.createElement('g', { transform: 'translate(40, 340)' },
-            React.createElement('line', { x1: 0, y1: 0, x2: 60, y2: 0, stroke: '#94a3b8', strokeWidth: 1.5 }),
-            React.createElement('line', { x1: 0, y1: -3, x2: 0, y2: 3, stroke: '#94a3b8', strokeWidth: 1.5 }),
-            React.createElement('line', { x1: 60, y1: -3, x2: 60, y2: 3, stroke: '#94a3b8', strokeWidth: 1.5 }),
-            React.createElement('text', { x: 70, y: 3, className: 'fill-slate-400 font-mono text-[9px]' }, '5 km')
+        // Foreman Chart
+        React.createElement('div', { className: 'flex flex-col gap-3' },
+          React.createElement('h3', { className: 'text-xs font-bold text-slate-500 uppercase tracking-wider' }, 'Foreman'),
+          React.createElement('div', { className: 'h-[220px] w-full' },
+            React.createElement(ResponsiveContainer, { width: '100%', height: '100%' } as any,
+              React.createElement(BarChart, { data: foremanData, margin: { top: 10, right: 10, left: -20, bottom: 20 } },
+                React.createElement(CartesianGrid, { strokeDasharray: '3 3', stroke: '#f1f5f9', vertical: false }),
+                React.createElement(XAxis, { 
+                  dataKey: 'name', 
+                  tick: { fill: '#94a3b8', fontSize: 10 },
+                  axisLine: false,
+                  tickLine: false,
+                  interval: 0,
+                  angle: -25,
+                  textAnchor: 'end'
+                }),
+                React.createElement(YAxis, { 
+                  tick: { fill: '#94a3b8', fontSize: 10 },
+                  axisLine: false,
+                  tickLine: false,
+                  tickFormatter: formatYAxis
+                }),
+                React.createElement(Tooltip, { content: React.createElement(CustomTooltip, null), cursor: { fill: '#f8fafc' } }),
+                React.createElement(Bar, { dataKey: 'margin', radius: [4, 4, 0, 0] },
+                  foremanData.map((entry, index) => 
+                    React.createElement(Cell, { 
+                      key: `cell-${index}`, 
+                      fill: entry.margin >= 0 ? '#10b981' : '#ef4444' 
+                    })
+                  )
+                )
+              )
+            )
           )
         )
       )
     )
   );
 };
+export default ServiceMap;
