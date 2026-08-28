@@ -33,11 +33,6 @@ export const Filters: React.FC = () => {
     return Array.from(sets);
   }, [workOrders, filters.generalForeman]);
 
-  const areaList = useMemo(() => {
-    const sets = new Set(workOrders.map(w => w.area).filter(Boolean));
-    return ['All areas', ...Array.from(sets)];
-  }, [workOrders]);
-
   const handleForemanToggle = (foremanName: string) => {
     let current = [...filters.foreman];
     if (current.includes(foremanName)) {
@@ -103,8 +98,8 @@ export const Filters: React.FC = () => {
               className: 'w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 flex justify-between items-center cursor-pointer font-medium text-left'
             },
               filters.foreman.length === 0 ? 'Select Foreman' :
-              filters.foreman.length === foremanList.length ? 'All foremen selected' :
-              filters.foreman.length + ' foremen selected',
+                filters.foreman.length === foremanList.length ? 'All foremen selected' :
+                  filters.foreman.length + ' foremen selected',
               React.createElement(ChevronDown, { className: 'w-4 h-4 text-slate-400' })
             ),
             isOpen && React.createElement('div', { className: 'absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto p-2 space-y-1' },
@@ -115,7 +110,7 @@ export const Filters: React.FC = () => {
                 React.createElement('input', {
                   type: 'checkbox',
                   checked: filters.foreman.length === foremanList.length && foremanList.length > 0,
-                  onChange: () => {},
+                  onChange: () => { },
                   className: 'rounded text-blue-600 focus:ring-blue-500 pointer-events-none'
                 }),
                 'Select All'
@@ -129,7 +124,7 @@ export const Filters: React.FC = () => {
                   React.createElement('input', {
                     type: 'checkbox',
                     checked: filters.foreman.includes(fore),
-                    onChange: () => {},
+                    onChange: () => { },
                     className: 'rounded text-blue-600 focus:ring-blue-500 pointer-events-none'
                   }),
                   fore
@@ -139,16 +134,7 @@ export const Filters: React.FC = () => {
           )
         )
       ),
-      React.createElement('div', { className: 'flex flex-col gap-1' },
-        React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wide text-slate-500' }, 'Area'),
-        React.createElement('select', {
-          value: filters.area,
-          onChange: (e) => dispatch(setFilters({ area: (e.target as HTMLSelectElement).value })),
-          className: 'px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer'
-        },
-          areaList.map(a => React.createElement('option', { key: a, value: a }, a))
-        )
-      ),
+
       React.createElement('div', { className: 'flex flex-col gap-1' },
         React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wide text-slate-500' }, 'Invoice Status'),
         React.createElement('select', {

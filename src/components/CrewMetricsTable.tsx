@@ -134,12 +134,7 @@ export const CrewMetricsTable: React.FC = () => {
             React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Hours Worked'),
             React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Revenue'),
             React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Expense'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Margin'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Avg Cycle'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'On Time'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Discipline %'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Expired loc.'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'KM / Job')
+            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Margin')
           )
         ),
         React.createElement('tbody', null,
@@ -156,12 +151,7 @@ export const CrewMetricsTable: React.FC = () => {
               React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, row.days ? (row.days * 8) + ' hrs' : '-'),
               React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, formatCurrency(row.revenue)),
               React.createElement('td', { className: 'py-3 px-4 text-right font-mono text-red-600' }, formatCurrency(row.expense)),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono font-bold ' + (row.margin >= 0 ? 'text-green-600' : 'text-red-600') }, formatCurrency(row.margin)),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, row.cycle + ' d'),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, row.onTime + '%'),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, row.discipline + '%'),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono text-amber-600' }, row.expired + '%'),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono text-slate-400' }, row.kmJob)
+              React.createElement('td', { className: 'py-3 px-4 text-right font-mono font-bold ' + (row.margin >= 0 ? 'text-green-600' : 'text-red-600') }, formatCurrency(row.margin))
             )
           )
         )
