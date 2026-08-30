@@ -40,9 +40,9 @@ export const Kpis: React.FC = () => {
     });
   }, [invoices, filteredWO, filters.status]);
 
-  const woCount = filteredWO.length;
-  const woCompleted = filteredWO.filter(w => w.status === 'Ready to Bill' || w.status === 'CTCC Completed').length;
-  const woOpen = woCount - woCompleted;
+  // const woCount = filteredWO.length;
+  // const woCompleted = filteredWO.filter(w => w.status === 'Ready to Bill' || w.status === 'CTCC Completed').length;
+  // const woOpen = woCount - woCompleted;
 
   const invoicedAmount = filteredInvoices.reduce((sum, i) => sum + i.total, 0);
   const invoiceCount = filteredInvoices.length;
