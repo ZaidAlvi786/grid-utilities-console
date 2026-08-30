@@ -83,7 +83,8 @@ export const ApprovedVsUnapprovedChart: React.FC = () => {
       'Nov 25', 'Dec 25', 'Jan 26', 'Feb 26', 'Mar 26', 'Apr 26', 'May 26', 'Jun 26', 'Jul 26', 'Aug 26'
     ];
 
-    return monthOrder.map(m => monthMap[m] || { month: m, Approved: 0, Unapproved: 0 });
+    // Only display the last 4 months
+    return monthOrder.slice(-4).map(m => monthMap[m] || { month: m, Approved: 0, Unapproved: 0 });
   }, [workOrders, invoices, filters]);
 
   const formatYAxis = (tick: number) => {
