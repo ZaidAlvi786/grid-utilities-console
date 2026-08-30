@@ -172,7 +172,7 @@ export const ServiceMap: React.FC = () => {
                   foremanData.map((entry, index) => 
                     React.createElement(Cell, { 
                       key: `cell-${index}`, 
-                      fill: entry.margin >= 0 ? '#10b981' : '#ef4444' 
+                      fill: entry.margin >= 0 ? '#3b82f6' : '#ef4444' 
                     })
                   )
                 )

@@ -40,9 +40,9 @@ export const Kpis: React.FC = () => {
     });
   }, [invoices, filteredWO, filters.status]);
 
-  const woCount = filteredWO.length;
-  const woCompleted = filteredWO.filter(w => w.status === 'Ready to Bill' || w.status === 'CTCC Completed').length;
-  const woOpen = woCount - woCompleted;
+  // const woCount = filteredWO.length;
+  // const woCompleted = filteredWO.filter(w => w.status === 'Ready to Bill' || w.status === 'CTCC Completed').length;
+  // const woOpen = woCount - woCompleted;
 
   const invoicedAmount = filteredInvoices.reduce((sum, i) => sum + i.total, 0);
   const invoiceCount = filteredInvoices.length;
@@ -101,7 +101,8 @@ export const Kpis: React.FC = () => {
   };
 
   return (
-    React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-4 gap-6 select-none' },
+    React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6 select-none' },
+      /* Work Orders card - commented out
       React.createElement('div', { className: 'bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all' },
         React.createElement('p', { className: 'text-xs font-bold tracking-wide text-slate-400 uppercase' }, 'Work Orders'),
         React.createElement('h1', { className: 'text-3xl font-extrabold text-slate-900 my-2' }, woCount),
@@ -114,6 +115,7 @@ export const Kpis: React.FC = () => {
           React.createElement('div', { className: 'bg-blue-600 h-full', style: { width: (woCount > 0 ? (woCompleted / woCount) * 100 : 0) + '%' } })
         )
       ),
+      */
       React.createElement('div', { className: 'bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all' },
         React.createElement('p', { className: 'text-xs font-bold tracking-wide text-slate-400 uppercase' }, 'Invoiced Amount'),
         React.createElement('h1', { className: 'text-3xl font-extrabold text-slate-900 my-2' }, formatCurrency(invoicedAmount)),
