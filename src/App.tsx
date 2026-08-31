@@ -69,11 +69,23 @@ export const App: React.FC = () => {
         {/* KPIs Row */}
         <Kpis />
 
-        {/* Financial Charts (Role-Dependent) */}
+        {/* 1. Profit Margin + Service Requirements */}
+        {isSupervisor ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <ProfitMarginOverTime />
+            <ServiceRequirements />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6">
+            <ServiceRequirements />
+          </div>
+        )}
+
+        {/* 2. Approved Vs Unapproved (+ Profit Margin Performance Service Map for Supervisor) */}
         {isSupervisor && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ApprovedVsUnapprovedChart />
-            <ProfitMarginOverTime />
+            <ServiceMap />
           </div>
         )}
 
@@ -83,23 +95,11 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Operational Status Charts (Status Categories by Days + Status Count Percentage Breakdown) */}
+        {/* 3. Status Categories by Days + Status Count Percentage Breakdown */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <StatusDaysChart />
           <StatusPercentage />
         </div>
-
-        {/* Service Requirements & Service Map */}
-        {isSupervisor ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ServiceMap />
-            <ServiceRequirements />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6">
-            <ServiceRequirements />
-          </div>
-        )}
 
         {/* Money Aging (Supervisor & Admin only) */}
         {!isEmployee && <MoneyHeldAging />}
