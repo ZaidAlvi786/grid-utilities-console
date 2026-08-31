@@ -1,13 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import { parseExcelDate } from '../utils/helpers';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState } from '../store/store';
+import { RootState, AppDispatch } from '../store/store';
 import { setFilters } from '../store/filtersSlice';
 
 export const CrewMetricsTable: React.FC = () => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const filters = useSelector((state: RootState) => state.filters);
   const { workOrders, invoices, dailyExpenseRate } = useSelector((state: RootState) => state.db);
+  const { currentUser } = useSelector((state: RootState) => state.auth);
+
+  const role = currentUser?.role || 'Supervisor';
+  const isSupervisor = role === 'Supervisor';
+  const isEmployee = role === 'Employee';
 
   const [viewMode, setViewMode] = useState<'General Foreman' | 'Foreman'>('Foreman');
 
@@ -105,57 +110,79 @@ export const CrewMetricsTable: React.FC = () => {
   };
 
   return (
-    React.createElement('div', { className: 'bg-white p-6 rounded-xl shadow-sm border border-slate-200 select-none overflow-x-auto' },
-      React.createElement('div', { className: 'flex justify-between items-center mb-6' },
-        React.createElement('div', null,
-          React.createElement('h2', { className: 'text-lg font-semibold text-slate-800 my-0' }, 'Crew Performance Metrics'),
-          React.createElement('p', { className: 'text-xs text-slate-500 mt-1' }, 'Click a row to filter dashboard to that crew. Money runs on booked days model (,800/day).')
-        ),
-        React.createElement('div', { className: 'flex bg-slate-100 p-0.5 rounded-lg border border-slate-200' },
-          React.createElement('button', {
-            onClick: () => setViewMode('General Foreman'),
-            className: 'px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all ' +
-              (viewMode === 'General Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800')
-          }, 'General Foreman'),
-          React.createElement('button', {
-            onClick: () => setViewMode('Foreman'),
-            className: 'px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all ' +
-              (viewMode === 'Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800')
-          }, 'Foreman')
-        )
-      ),
-      React.createElement('table', { className: 'w-full border-collapse text-left text-xs text-slate-600 min-w-[1000px]' },
-        React.createElement('thead', { className: 'bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]' },
-          React.createElement('tr', null,
-            React.createElement('th', { className: 'py-3 px-4 font-semibold' }, viewMode === 'General Foreman' ? 'General Foreman' : 'Foreman'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'WOs'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Complete %'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Booked Days'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Hours Worked'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Revenue'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Expense'),
-            React.createElement('th', { className: 'py-3 px-4 font-semibold text-right' }, 'Margin')
-          )
-        ),
-        React.createElement('tbody', null,
-          currentRows.map(row =>
-            React.createElement('tr', {
-              key: row.name,
-              onClick: () => handleRowClick(row),
-              className: 'border-b border-slate-100 hover:bg-slate-50 transition-colors duration-150 cursor-pointer'
-            },
-              React.createElement('td', { className: 'py-3 px-4 font-bold text-slate-800' }, row.name),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, row.wos),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono text-blue-600 font-semibold' }, Math.round((row.complete / (row.wos || 1)) * 100) + '%'),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, row.days || '-'),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, row.days ? (row.days * 8) + ' hrs' : '-'),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono' }, formatCurrency(row.revenue)),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono text-red-600' }, formatCurrency(row.expense)),
-              React.createElement('td', { className: 'py-3 px-4 text-right font-mono font-bold ' + (row.margin >= 0 ? 'text-green-600' : 'text-red-600') }, formatCurrency(row.margin))
-            )
-          )
-        )
-      )
-    )
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 select-none overflow-x-auto font-sans">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800 my-0">Crew Performance Metrics</h2>
+          <p className="text-xs text-slate-500 mt-1 font-medium">
+            {isEmployee
+              ? 'Click a row to filter dashboard to that crew. Displays field productivity and booked time.'
+              : 'Click a row to filter dashboard to that crew. Money calculations run on booked days model ($5,800/day).'}
+          </p>
+        </div>
+        <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+          <button
+            onClick={() => setViewMode('General Foreman')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+              viewMode === 'General Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            General Foreman
+          </button>
+          <button
+            onClick={() => setViewMode('Foreman')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+              viewMode === 'Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Foreman
+          </button>
+        </div>
+      </div>
+
+      <table className="w-full border-collapse text-left text-xs text-slate-600 min-w-[700px]">
+        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+          <tr>
+            <th className="py-3 px-4 font-semibold">{viewMode === 'General Foreman' ? 'General Foreman' : 'Foreman'}</th>
+            <th className="py-3 px-4 font-semibold text-right">WOs</th>
+            <th className="py-3 px-4 font-semibold text-right">Complete %</th>
+            <th className="py-3 px-4 font-semibold text-right">Booked Days</th>
+            <th className="py-3 px-4 font-semibold text-right">Hours Worked</th>
+            {!isEmployee && <th className="py-3 px-4 font-semibold text-right">Revenue</th>}
+            {!isEmployee && <th className="py-3 px-4 font-semibold text-right">Expense</th>}
+            {isSupervisor && <th className="py-3 px-4 font-semibold text-right">Margin</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {currentRows.map(row => (
+            <tr
+              key={row.name}
+              onClick={() => handleRowClick(row)}
+              className="border-b border-slate-100 hover:bg-slate-50 transition-colors duration-150 cursor-pointer"
+            >
+              <td className="py-3 px-4 font-bold text-slate-800">{row.name}</td>
+              <td className="py-3 px-4 text-right font-mono">{row.wos}</td>
+              <td className="py-3 px-4 text-right font-mono text-blue-600 font-semibold">
+                {Math.round((row.complete / (row.wos || 1)) * 100)}%
+              </td>
+              <td className="py-3 px-4 text-right font-mono">{row.days || '-'}</td>
+              <td className="py-3 px-4 text-right font-mono">{row.days ? row.days * 8 + ' hrs' : '-'}</td>
+              {!isEmployee && <td className="py-3 px-4 text-right font-mono">{formatCurrency(row.revenue)}</td>}
+              {!isEmployee && <td className="py-3 px-4 text-right font-mono text-red-600">{formatCurrency(row.expense)}</td>}
+              {isSupervisor && (
+                <td
+                  className={`py-3 px-4 text-right font-mono font-bold ${
+                    row.margin >= 0 ? 'text-emerald-600' : 'text-red-600'
+                  }`}
+                >
+                  {formatCurrency(row.margin)}
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 };
+export default CrewMetricsTable;
