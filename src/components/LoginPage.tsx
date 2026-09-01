@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import { loginThunk, clearAuthError } from '../store/authSlice';
+import { validateEmailAddress } from '../utils/helpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutGrid,
@@ -21,7 +22,7 @@ export const LoginPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { isLoading, authError } = useSelector((state: RootState) => state.auth);
 
-  const [email, setEmail] = useState('muhammadumar009@gmail.com');
+  const [email, setEmail] = useState('samkanalytics@gmail.com');
   const [password, setPassword] = useState('Admin@123');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -31,10 +32,7 @@ export const LoginPage: React.FC = () => {
   const [clientErrors, setClientErrors] = useState<{ email?: string; password?: string }>({});
 
   const validateEmail = (val: string) => {
-    if (!val.trim()) return 'Email address is required';
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(val.trim())) return 'Please enter a valid email address';
-    return '';
+    return validateEmailAddress(val);
   };
 
   const validatePassword = (val: string) => {
@@ -252,18 +250,18 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {/* Supervisor */}
+              {/* Supervisor (Owner) */}
               <button
                 type="button"
-                onClick={() => handleQuickFill('muhammadumar009@gmail.com', 'Admin@123')}
+                onClick={() => handleQuickFill('samkanalytics@gmail.com', 'Admin@123')}
                 className="flex flex-col items-start p-2 bg-slate-50 hover:bg-purple-50/70 border border-slate-200 hover:border-purple-200 rounded-xl transition-all text-left cursor-pointer group"
               >
                 <div className="flex items-center gap-1 text-purple-700 text-[11px] font-bold">
                   <ShieldCheck className="w-3 h-3 text-purple-600" />
                   <span>Supervisor</span>
                 </div>
-                <span className="text-[9px] text-slate-500 mt-0.5 leading-tight">
-                  Full control
+                <span className="text-[9px] text-purple-800 font-semibold mt-0.5 leading-tight">
+                  Owner · Full
                 </span>
               </button>
 
@@ -302,10 +300,11 @@ export const LoginPage: React.FC = () => {
 
         {/* Footer info without scrolling */}
         <div className="text-center text-[11px] text-slate-400 mt-4">
-          Default Supervisor: <span className="text-slate-600 font-semibold font-mono">muhammadumar009@gmail.com</span> · Password: <span className="text-slate-600 font-semibold font-mono">Admin@123</span>
+          Default Owner (Supervisor): <span className="text-slate-600 font-semibold font-mono">samkanalytics@gmail.com</span> · Password: <span className="text-slate-600 font-semibold font-mono">Admin@123</span>
         </div>
       </motion.div>
     </div>
   );
 };
 export default LoginPage;
+

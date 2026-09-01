@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { supabase } from '../utils/supabaseClient';
+import { validateEmailAddress } from '../utils/helpers';
 
 export type UserRole = 'Supervisor' | 'Admin' | 'Employee';
 
@@ -33,10 +34,11 @@ interface AuthState {
 }
 
 // Initial default accounts for seamless operation & demo
+// Supervisor is the Owner with top-level system authority
 const DEFAULT_SUPERVISOR: UserProfile = {
   id: 'sup-001',
-  email: 'muhammadumar009@gmail.com',
-  name: 'Muhammad Umar',
+  email: 'samkanalytics@gmail.com',
+  name: 'Samk Analytics (Owner)',
   role: 'Supervisor',
   createdAt: '2026-08-01',
 };
@@ -60,8 +62,8 @@ const DEFAULT_EMPLOYEE: UserProfile = {
 const INITIAL_TEAM_MEMBERS: TeamMember[] = [
   {
     id: 'sup-001',
-    name: 'Muhammad Umar',
-    email: 'muhammadumar009@gmail.com',
+    name: 'Samk Analytics (Owner)',
+    email: 'samkanalytics@gmail.com',
     role: 'Supervisor',
     status: 'Active',
     invitedAt: '2026-08-01',
@@ -84,15 +86,44 @@ const INITIAL_TEAM_MEMBERS: TeamMember[] = [
   },
 ];
 
-// Helper to get local stored auth or fallback
+// Helper to get local stored auth or fallback, with auto-migration from previous email
 const getSavedAuth = (): { user: UserProfile | null; team: TeamMember[] } => {
   try {
-    const savedUser = localStorage.getItem('grid_auth_user');
-    const savedTeam = localStorage.getItem('grid_team_members');
-    return {
-      user: savedUser ? JSON.parse(savedUser) : DEFAULT_SUPERVISOR, // Auto-login as Supervisor on first load
-      team: savedTeam ? JSON.parse(savedTeam) : INITIAL_TEAM_MEMBERS,
-    };
+    const savedUserRaw = localStorage.getItem('grid_auth_user');
+    const savedTeamRaw = localStorage.getItem('grid_team_members');
+
+    let user: UserProfile = savedUserRaw ? JSON.parse(savedUserRaw) : DEFAULT_SUPERVISOR;
+    let team: TeamMember[] = savedTeamRaw ? JSON.parse(savedTeamRaw) : INITIAL_TEAM_MEMBERS;
+
+    // Migrate any legacy muhammadumar009@gmail.com references to samkanalytics@gmail.com
+    if (user && user.email === 'muhammadumar009@gmail.com') {
+      user = {
+        ...user,
+        email: 'samkanalytics@gmail.com',
+        name: user.name === 'Muhammad Umar' ? 'Samk Analytics (Owner)' : user.name,
+      };
+      localStorage.setItem('grid_auth_user', JSON.stringify(user));
+    }
+
+    if (Array.isArray(team)) {
+      let migrated = false;
+      team = team.map((m) => {
+        if (m.email === 'muhammadumar009@gmail.com') {
+          migrated = true;
+          return {
+            ...m,
+            email: 'samkanalytics@gmail.com',
+            name: m.name === 'Muhammad Umar' ? 'Samk Analytics (Owner)' : m.name,
+          };
+        }
+        return m;
+      });
+      if (migrated) {
+        localStorage.setItem('grid_team_members', JSON.stringify(team));
+      }
+    }
+
+    return { user, team };
   } catch {
     return {
       user: DEFAULT_SUPERVISOR,
@@ -118,8 +149,11 @@ export const loginThunk = createAsyncThunk(
   async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. Check default Supervisor credentials
-    if (cleanEmail === 'muhammadumar009@gmail.com' && password === 'Admin@123') {
+    // 1. Check default Supervisor (Owner) credentials
+    if (
+      (cleanEmail === 'samkanalytics@gmail.com' || cleanEmail === 'muhammadumar009@gmail.com') &&
+      password === 'Admin@123'
+    ) {
       const user: UserProfile = {
         ...DEFAULT_SUPERVISOR,
         lastLogin: new Date().toISOString(),
@@ -129,7 +163,10 @@ export const loginThunk = createAsyncThunk(
     }
 
     // 2. Check default Admin credentials
-    if (cleanEmail === 'sarah.admin@gridutil.com' && (password === 'Admin@123' || password === 'admin123')) {
+    if (
+      cleanEmail === 'sarah.admin@gridutil.com' &&
+      (password === 'Admin@123' || password === 'admin123')
+    ) {
       const user: UserProfile = {
         ...DEFAULT_ADMIN,
         lastLogin: new Date().toISOString(),
@@ -139,7 +176,10 @@ export const loginThunk = createAsyncThunk(
     }
 
     // 3. Check default Employee credentials
-    if (cleanEmail === 'david.field@gridutil.com' && (password === 'Admin@123' || password === 'employee123')) {
+    if (
+      cleanEmail === 'david.field@gridutil.com' &&
+      (password === 'Admin@123' || password === 'employee123')
+    ) {
       const user: UserProfile = {
         ...DEFAULT_EMPLOYEE,
         lastLogin: new Date().toISOString(),
@@ -153,8 +193,11 @@ export const loginThunk = createAsyncThunk(
       const savedTeamRaw = localStorage.getItem('grid_team_members');
       if (savedTeamRaw) {
         const team: TeamMember[] = JSON.parse(savedTeamRaw);
-        const match = team.find(m => m.email.toLowerCase() === cleanEmail);
-        if (match && (!match.tempPassword || match.tempPassword === password || password === 'Admin@123')) {
+        const match = team.find((m) => m.email.toLowerCase() === cleanEmail);
+        if (
+          match &&
+          (!match.tempPassword || match.tempPassword === password || password === 'Admin@123')
+        ) {
           const user: UserProfile = {
             id: match.id,
             email: match.email,
@@ -180,7 +223,9 @@ export const loginThunk = createAsyncThunk(
 
       if (!error && data?.user) {
         const userMeta = data.user.user_metadata || {};
-        const userRole: UserRole = (userMeta.role as UserRole) || (cleanEmail === 'muhammadumar009@gmail.com' ? 'Supervisor' : 'Employee');
+        const userRole: UserRole =
+          (userMeta.role as UserRole) ||
+          (cleanEmail === 'samkanalytics@gmail.com' ? 'Supervisor' : 'Employee');
         const user: UserProfile = {
           id: data.user.id,
           email: data.user.email || cleanEmail,
@@ -208,6 +253,11 @@ export const updateProfileThunk = createAsyncThunk(
       const state = getState() as { auth: AuthState };
       const current = state.auth.currentUser;
       if (!current) throw new Error('Not logged in');
+
+      const emailValidation = validateEmailAddress(email);
+      if (emailValidation) {
+        return rejectWithValue(emailValidation);
+      }
 
       // 1. Update in Supabase Auth
       try {
@@ -240,7 +290,7 @@ export const updateProfileThunk = createAsyncThunk(
       localStorage.setItem('grid_auth_user', JSON.stringify(updated));
 
       // Also update in teamMembers list if present
-      const team = state.auth.teamMembers.map(m =>
+      const team = state.auth.teamMembers.map((m) =>
         m.id === current.id ? { ...m, name, email } : m
       );
       localStorage.setItem('grid_team_members', JSON.stringify(team));
@@ -275,11 +325,23 @@ export const updatePasswordThunk = createAsyncThunk(
 export const inviteTeamMemberThunk = createAsyncThunk(
   'auth/inviteTeamMember',
   async (
-    { name, email, role, tempPassword }: { name: string; email: string; role: UserRole; tempPassword?: string },
+    {
+      name,
+      email,
+      role,
+      tempPassword,
+    }: { name: string; email: string; role: UserRole; tempPassword?: string },
     { getState, rejectWithValue }
   ) => {
     try {
       const cleanEmail = email.trim().toLowerCase();
+
+      // Strict email format validation
+      const emailValidation = validateEmailAddress(cleanEmail);
+      if (emailValidation) {
+        return rejectWithValue(emailValidation);
+      }
+
       const generatedPassword = tempPassword || `Grid@${Math.floor(1000 + Math.random() * 9000)}`;
 
       // 1. Attempt Supabase Auth email invite / sign up
@@ -292,7 +354,12 @@ export const inviteTeamMemberThunk = createAsyncThunk(
             data: {
               name,
               role,
+              password: generatedPassword,
+              temp_password: generatedPassword,
+              initial_password: generatedPassword,
             },
+            emailRedirectTo:
+              typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
           },
         });
 
@@ -333,7 +400,10 @@ export const inviteTeamMemberThunk = createAsyncThunk(
       }
 
       const state = getState() as { auth: AuthState };
-      const updatedTeam = [newMember, ...state.auth.teamMembers.filter(m => m.email.toLowerCase() !== cleanEmail)];
+      const updatedTeam = [
+        newMember,
+        ...state.auth.teamMembers.filter((m) => m.email.toLowerCase() !== cleanEmail),
+      ];
       localStorage.setItem('grid_team_members', JSON.stringify(updatedTeam));
 
       return {
@@ -344,6 +414,92 @@ export const inviteTeamMemberThunk = createAsyncThunk(
       };
     } catch (err: any) {
       return rejectWithValue(err.message || 'Failed to send invitation');
+    }
+  }
+);
+
+// Update Team Member Role Thunk (Supervisor only)
+export const updateTeamMemberRoleThunk = createAsyncThunk(
+  'auth/updateTeamMemberRole',
+  async (
+    { memberId, newRole }: { memberId: string; newRole: UserRole },
+    { getState, rejectWithValue }
+  ) => {
+    try {
+      const state = getState() as { auth: AuthState };
+      const member = state.auth.teamMembers.find(m => m.id === memberId);
+      if (!member) throw new Error('Member not found');
+
+      // Update in Supabase profiles table
+      try {
+        await supabase
+          .from('profiles')
+          .update({ role: newRole, updated_at: new Date().toISOString() })
+          .or(`id.eq.${memberId},email.eq.${member.email}`);
+      } catch (e) {
+        console.warn('Supabase update role notice:', e);
+      }
+
+      const updatedTeam = state.auth.teamMembers.map(m =>
+        m.id === memberId ? { ...m, role: newRole } : m
+      );
+      localStorage.setItem('grid_team_members', JSON.stringify(updatedTeam));
+
+      let updatedCurrentUser = state.auth.currentUser;
+      if (
+        state.auth.currentUser &&
+        (state.auth.currentUser.id === memberId ||
+          state.auth.currentUser.email.toLowerCase() === member.email.toLowerCase())
+      ) {
+        updatedCurrentUser = { ...state.auth.currentUser, role: newRole };
+        localStorage.setItem('grid_auth_user', JSON.stringify(updatedCurrentUser));
+      }
+
+      return {
+        memberId,
+        newRole,
+        team: updatedTeam,
+        currentUser: updatedCurrentUser,
+      };
+    } catch (err: any) {
+      return rejectWithValue(err.message || 'Failed to update member role');
+    }
+  }
+);
+
+// Remove Team Member Thunk (Supervisor only)
+export const removeTeamMemberThunk = createAsyncThunk(
+  'auth/removeTeamMember',
+  async (
+    { memberId, email }: { memberId: string; email: string },
+    { getState, rejectWithValue }
+  ) => {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+
+      // Delete from Supabase profiles table
+      try {
+        await supabase
+          .from('profiles')
+          .delete()
+          .or(`id.eq.${memberId},email.eq.${cleanEmail}`);
+      } catch (e) {
+        console.warn('Supabase delete profile notice:', e);
+      }
+
+      const state = getState() as { auth: AuthState };
+      const updatedTeam = state.auth.teamMembers.filter(
+        m => m.id !== memberId && m.email.toLowerCase() !== cleanEmail
+      );
+      localStorage.setItem('grid_team_members', JSON.stringify(updatedTeam));
+
+      return {
+        memberId,
+        email: cleanEmail,
+        team: updatedTeam,
+      };
+    } catch (err: any) {
+      return rejectWithValue(err.message || 'Failed to remove team member');
     }
   }
 );
@@ -417,6 +573,19 @@ export const authSlice = createSlice({
         state.isLoading = false;
         state.authError = (action.payload as string) || 'Failed to invite team member';
       });
+
+    // Update Member Role
+    builder.addCase(updateTeamMemberRoleThunk.fulfilled, (state, action) => {
+      state.teamMembers = action.payload.team;
+      if (action.payload.currentUser) {
+        state.currentUser = action.payload.currentUser;
+      }
+    });
+
+    // Remove Member
+    builder.addCase(removeTeamMemberThunk.fulfilled, (state, action) => {
+      state.teamMembers = action.payload.team;
+    });
   },
 });
 

@@ -104,3 +104,34 @@ export const getFilterFingerprint = (filters: any): string => {
     status: filters.status || 'All',
   });
 };
+
+// Strict email validator that rejects pure-numeric usernames like "123@gmail.com"
+export const validateEmailAddress = (val: string): string => {
+  const trimmed = (val || '').trim();
+  if (!trimmed) return 'Email address is required';
+
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(trimmed)) {
+    return 'Please enter a valid email address (e.g. name@company.com)';
+  }
+
+  const parts = trimmed.split('@');
+  if (parts.length !== 2) return 'Invalid email format';
+  const [localPart, domainPart] = parts;
+
+  // Disallow purely numeric username / local-part (e.g. "123@gmail.com")
+  if (/^\d+$/.test(localPart)) {
+    return 'Email username cannot consist only of numbers (e.g. 123@gmail.com is not allowed)';
+  }
+
+  if (localPart.length < 2) {
+    return 'Email username must be at least 2 characters long';
+  }
+
+  const domainParts = domainPart.split('.');
+  if (domainParts.some((p) => !p || /^\d+$/.test(p))) {
+    return 'Please enter a valid domain name in email address';
+  }
+
+  return '';
+};

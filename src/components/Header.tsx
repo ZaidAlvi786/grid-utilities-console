@@ -170,7 +170,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) 
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                       }`}
                     >
-                      <span>Supervisor (Full)</span>
+                      <span>Supervisor (Owner)</span>
                       {role === 'Supervisor' && <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
                     </button>
                     <button
