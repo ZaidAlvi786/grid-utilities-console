@@ -1,16 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
-import { logout, setRolePreview, UserRole } from '../store/authSlice';
-import { LayoutGrid, UploadCloud, Settings, LogOut, ChevronDown, Sparkles } from 'lucide-react';
+import { logout, UserRole } from '../store/authSlice';
+import { LayoutGrid, UploadCloud, Settings, LogOut, ChevronDown, Clock, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface HeaderProps {
+  activeTab: 'dashboard' | 'timesheet';
+  onTabChange: (tab: 'dashboard' | 'timesheet') => void;
   onOpenUpload: () => void;
   onOpenSettings: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) => {
+export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onOpenUpload, onOpenSettings }) => {
   const dispatch = useDispatch<AppDispatch>();
   const { workOrders, invoices } = useSelector((state: RootState) => state.db);
   const { currentUser } = useSelector((state: RootState) => state.auth);
@@ -33,10 +35,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleRoleSwitch = (newRole: UserRole) => {
-    dispatch(setRolePreview(newRole));
-    setDropdownOpen(false);
-  };
+  // const handleRoleSwitch = (newRole: UserRole) => {
+  //   dispatch(setRolePreview(newRole));
+  //   setDropdownOpen(false);
+  // };
 
   const handleLogout = () => {
     dispatch(logout());
@@ -55,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) 
   };
 
   return (
-    <header className="flex flex-col md:flex-row justify-between items-start md:items-center py-5 px-6 sm:px-8 bg-slate-900 border-b border-slate-800 text-white select-none relative z-40">
+    <header className="flex flex-col md:flex-row justify-between items-start md:items-center py-5 px-6 sm:px-8 bg-slate-900 border-b border-slate-800 text-white select-none relative z-40 gap-4">
       {/* Brand & Stats */}
       <div className="flex items-center gap-3.5">
         <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-2.5 rounded-xl shadow-lg shadow-blue-500/20 ring-1 ring-white/10">
@@ -82,9 +84,34 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) 
         </div>
       </div>
 
+      {/* Tab Switcher */}
+      <div className="flex items-center bg-slate-850 p-1 rounded-xl border border-slate-700/80 shadow-inner">
+        <button
+          type="button"
+          onClick={() => onTabChange('dashboard')}
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${activeTab === 'dashboard'
+            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          <span>Dashboard</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange('timesheet')}
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${activeTab === 'timesheet'
+            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>Timesheet</span>
+        </button>
+      </div>
+
       {/* Action Buttons & User Menu */}
-      <div className="mt-4 md:mt-0 flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-        {/* Upload Console Data button - hidden for basic employee if desired or available for field admins */}
+      <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
         {!isEmployee && (
           <button
             onClick={onOpenUpload}
@@ -156,7 +183,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) 
                 </div>
 
                 {/* Quick Role Preview Switcher for Testing */}
-                <div className="p-2 border-b border-slate-800/80">
+                {/* <div className="p-2 border-b border-slate-800/80">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-2 mb-1.5 flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-blue-400" />
                     <span>Test Role Persona</span>
@@ -196,7 +223,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) 
                       {role === 'Employee' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                     </button>
                   </div>
-                </div>
+                </div> */}
 
                 {/* Sign Out Option */}
                 <div className="p-1">
@@ -216,4 +243,5 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUpload, onOpenSettings }) 
     </header>
   );
 };
+
 export default Header;

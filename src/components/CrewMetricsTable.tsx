@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { parseExcelDate } from '../utils/helpers';
+import { getWorkOrderReportingDate } from '../utils/helpers';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import { setFilters } from '../store/filtersSlice';
@@ -40,7 +40,7 @@ export const CrewMetricsTable: React.FC = () => {
     workOrders.forEach(wo => {
       // Order date range filters
       if (wo.customer_need_date) {
-        const dateVal = parseExcelDate(wo.customer_need_date);
+        const dateVal = getWorkOrderReportingDate(wo);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return;
           if (filters.endDate && dateVal > filters.endDate) return;

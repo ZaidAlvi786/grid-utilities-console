@@ -1,4 +1,4 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 
 export const WorkOrderSchema = z.object({
   id: z.string().uuid().optional(),
@@ -82,6 +82,29 @@ export const ExpenseOverrideSchema = z.object({
   profit_margin_override: z.number().nullable().default(null),
 });
 
+export const LaborRateCategorySchema = z.object({
+  id: z.string().optional(),
+  category_name: z.string().min(1),
+  standard_rate: z.number(),
+  match_tolerance: z.number().default(0.10),
+});
+
+export const LaborEntrySchema = z.object({
+  id: z.string().optional(),
+  work_order_number: z.union([z.number(), z.string()]).transform((val) => val.toString().trim()).refine((val) => val !== '' && val !== '0', { message: 'Work Order number is required and cannot be empty or 0' }),
+  employee_name: z.string().min(1),
+  shift_date: z.string().min(1),
+  clock_in: z.string().nullable().optional(),
+  clock_out: z.string().nullable().optional(),
+  shift_hours: z.number().min(0),
+  hourly_rate: z.number().min(0),
+  line_labor_cost: z.number().min(0),
+  role_category: z.string().default('unclassified'),
+  created_at: z.string().optional(),
+});
+
 export type WorkOrder = z.infer<typeof WorkOrderSchema>;
 export type Invoice = z.infer<typeof InvoiceSchema>;
 export type ExpenseOverride = z.infer<typeof ExpenseOverrideSchema>;
+export type LaborRateCategory = z.infer<typeof LaborRateCategorySchema>;
+export type LaborEntry = z.infer<typeof LaborEntrySchema>;

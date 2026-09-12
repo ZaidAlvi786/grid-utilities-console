@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { parseExcelDate } from '../utils/helpers';
+import { getWorkOrderReportingDate } from '../utils/helpers';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 
@@ -14,7 +14,7 @@ export const MoneyHeldAging: React.FC = () => {
       if (filters.area !== 'All areas' && w.area !== filters.area) return false;
       // Order date range filters
       if (w.customer_need_date) {
-        const dateVal = parseExcelDate(w.customer_need_date);
+        const dateVal = getWorkOrderReportingDate(w);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return false;
           if (filters.endDate && dateVal > filters.endDate) return false;
