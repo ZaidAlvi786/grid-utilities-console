@@ -1,4 +1,61 @@
-import { WorkOrder, Invoice } from '../types/schemas';
+import { WorkOrder, Invoice, LaborRateCategory } from '../types/schemas';
+
+// Default standard labor rate categories provided by client
+export const DEFAULT_LABOR_RATE_CATEGORIES: LaborRateCategory[] = [
+  { category_name: 'GForeman', standard_rate: 55.70, match_tolerance: 0.10 },
+  { category_name: 'Foreman', standard_rate: 54.70, match_tolerance: 0.10 },
+  { category_name: 'Journeyman', standard_rate: 51.16, match_tolerance: 0.10 },
+  { category_name: 'Apprentice', standard_rate: 38.37, match_tolerance: 0.10 }, // absorbs 38.31
+  { category_name: 'Groundman', standard_rate: 25.66, match_tolerance: 0.10 },
+];
+
+// Helper to format currency
+export const formatCurrency = (val: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(val || 0);
+};
+
+// Helper to format hours
+export const formatHours = (val: number): string => {
+  return (val || 0).toLocaleString('en-US', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  }) + ' hrs';
+};
+
+// Helper to match an actual hourly rate to a role category with tolerance
+export const classifyLaborRole = (
+  hourlyRate: number,
+  categories: LaborRateCategory[] = DEFAULT_LABOR_RATE_CATEGORIES
+): string => {
+  if (typeof hourlyRate !== 'number' || isNaN(hourlyRate)) return 'unclassified';
+  for (const cat of categories) {
+    const tolerance = cat.match_tolerance !== undefined ? cat.match_tolerance : 0.10;
+    if (Math.abs(hourlyRate - cat.standard_rate) <= tolerance) {
+      return cat.category_name;
+    }
+  }
+  return 'unclassified';
+};
+
+// Convert HH:MM (e.g. 08:30 or 8:45) or numbers/decimal strings to decimal hours (e.g. 8.5)
+export const parseHoursToDecimal = (val: any): number => {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  const str = val.toString().trim();
+  if (str.includes(':')) {
+    const parts = str.split(':');
+    const hours = parseFloat(parts[0]) || 0;
+    const minutes = parseFloat(parts[1]) || 0;
+    return parseFloat((hours + minutes / 60).toFixed(2));
+  }
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? 0 : parsed;
+};
 
 // Safe coordinate boundaries for Great Houston Area
 export const HOUSTON_BOUNDS = {
@@ -86,13 +143,13 @@ export const deriveArea = (address: string, latitude?: number, longitude?: numbe
   if (upper.includes('TOMBALL')) return 'TOMBALL';
   if (upper.includes('KATY')) return 'KATY';
   if (upper.includes('SPRING')) {
-    // Spring Branch contains zip prefix 77080
     if (upper.includes('77080') || upper.includes('77055') || upper.includes('SPRING BRANCH')) return 'SPRING BRANCH';
     return 'SPRING';
   }
   if (upper.includes('77084') || upper.includes('77095') || upper.includes('BEAR CREEK') || upper.includes('CLAY RD')) return 'BEAR CREEK';
   if (upper.includes('HOUSTON')) return 'HOUSTON';
-  return 'HOUSTON';};
+  return 'HOUSTON';
+};
 
 export const getFilterFingerprint = (filters: any): string => {
   return JSON.stringify({
@@ -105,7 +162,7 @@ export const getFilterFingerprint = (filters: any): string => {
   });
 };
 
-// Strict email validator that rejects pure-numeric usernames like "123@gmail.com"
+// Strict email validator
 export const validateEmailAddress = (val: string): string => {
   const trimmed = (val || '').trim();
   if (!trimmed) return 'Email address is required';
@@ -119,7 +176,6 @@ export const validateEmailAddress = (val: string): string => {
   if (parts.length !== 2) return 'Invalid email format';
   const [localPart, domainPart] = parts;
 
-  // Disallow purely numeric username / local-part (e.g. "123@gmail.com")
   if (/^\d+$/.test(localPart)) {
     return 'Email username cannot consist only of numbers (e.g. 123@gmail.com is not allowed)';
   }
@@ -134,4 +190,38 @@ export const validateEmailAddress = (val: string): string => {
   }
 
   return '';
+};
+
+
+// Authoritative reporting date selector for Work Orders:
+// - Completed work metrics MUST use Fulcrum Completion Date (date_work_completed).
+// - Open/pending work metrics use Customer Need Date (customer_need_date) or creation date.
+// - CRITICAL: NEVER use Fulcrum's "Last Updated" (_server_updated_at / _updated_at) because
+//   any minor comment or edit will modify that timestamp and incorrectly shift the record into another reporting period.
+export const getWorkOrderReportingDate = (wo: any): string | null => {
+  if (!wo) return null;
+
+  // 1. If date_work_completed is present (completed work), use Fulcrum Completion Date
+  if (wo.date_work_completed) {
+    const completedDate = parseExcelDate(wo.date_work_completed);
+    if (completedDate) return completedDate;
+  }
+
+  // 2. Fallback to customer_need_date for pending work or if completion date is missing
+  if (wo.customer_need_date) {
+    const needDate = parseExcelDate(wo.customer_need_date);
+    if (needDate) return needDate;
+  }
+
+  // 3. Fallback to created_date / created_at (NEVER _server_updated_at)
+  if (wo.created_date) {
+    const cDate = parseExcelDate(wo.created_date);
+    if (cDate) return cDate;
+  }
+  if (wo.created_at) {
+    const cDate = parseExcelDate(wo.created_at);
+    if (cDate) return cDate;
+  }
+
+  return null;
 };

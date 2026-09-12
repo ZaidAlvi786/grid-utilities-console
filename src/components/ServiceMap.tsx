@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { parseExcelDate } from '../utils/helpers';
+import { getWorkOrderReportingDate } from '../utils/helpers';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -47,7 +47,7 @@ export const ServiceMap: React.FC = () => {
 
     workOrders.forEach(wo => {
       if (wo.customer_need_date) {
-        const dateVal = parseExcelDate(wo.customer_need_date);
+        const dateVal = getWorkOrderReportingDate(wo);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return;
           if (filters.endDate && dateVal > filters.endDate) return;

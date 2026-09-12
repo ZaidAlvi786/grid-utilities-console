@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+﻿import * as XLSX from 'xlsx';
 
 export const downloadWorkOrderTemplate = () => {
   const headers = [
@@ -48,4 +48,55 @@ export const downloadInvoiceTemplate = () => {
   const ws = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
   XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
   XLSX.writeFile(wb, 'invoice_template.xlsx');
+};
+
+export const downloadTimesheetTemplate = () => {
+  const headers = ['Type', 'First name', 'Last name', 'Start Date', 'In', 'Out', 'Shift hours', 'Hourly rate (USD)'];
+  const sampleRows = [
+    {
+      Type: '121213513',
+      'First name': 'Carlos',
+      'Last name': 'Rodriguez',
+      'Start Date': '2026-08-10',
+      In: '07:00',
+      Out: '15:30',
+      'Shift hours': '08:30',
+      'Hourly rate (USD)': 55.70,
+    },
+    {
+      Type: '121213513',
+      'First name': 'Derek',
+      'Last name': 'Mills',
+      'Start Date': '2026-08-10',
+      In: '07:00',
+      Out: '15:30',
+      'Shift hours': '08:30',
+      'Hourly rate (USD)': 54.70,
+    },
+    {
+      Type: '121213513',
+      'First name': 'Marcus',
+      'Last name': 'Vance',
+      'Start Date': '2026-08-10',
+      In: '07:00',
+      Out: '15:00',
+      'Shift hours': '08:00',
+      'Hourly rate (USD)': 38.31,
+    },
+    {
+      Type: '121213513',
+      'First name': 'John',
+      'Last name': 'Doe',
+      'Start Date': '2026-08-10',
+      In: '07:00',
+      Out: '15:00',
+      'Shift hours': '08:00',
+      'Hourly rate (USD)': 15.00,
+    }
+  ];
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(sampleRows, { header: headers });
+  XLSX.utils.book_append_sheet(wb, ws, 'Timesheet');
+  XLSX.writeFile(wb, 'connecteam_timesheet_template.xlsx');
 };

@@ -10,11 +10,11 @@ import {
   Mail,
   Eye,
   EyeOff,
-  ShieldCheck,
-  UserCheck,
+  // ShieldCheck,
+  // UserCheck,
   AlertCircle,
   ArrowRight,
-  Sparkles,
+  // Sparkles,
   CheckCircle2,
 } from 'lucide-react';
 
@@ -76,14 +76,14 @@ export const LoginPage: React.FC = () => {
     dispatch(loginThunk({ email: email.trim(), password }));
   };
 
-  const handleQuickFill = (demoEmail: string, demoPass: string) => {
-    dispatch(clearAuthError());
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setEmailTouched(false);
-    setPasswordTouched(false);
-    setClientErrors({});
-  };
+  // const handleQuickFill = (demoEmail: string, demoPass: string) => {
+  //   dispatch(clearAuthError());
+  //   setEmail(demoEmail);
+  //   setPassword(demoPass);
+  //   setEmailTouched(false);
+  //   setPasswordTouched(false);
+  //   setClientErrors({});
+  // };
 
   const isEmailValid = emailTouched && !validateEmail(email);
   const isPasswordValid = passwordTouched && !validatePassword(password);
@@ -148,13 +148,12 @@ export const LoginPage: React.FC = () => {
                     setClientErrors((prev) => ({ ...prev, email: validateEmail(email) }));
                   }}
                   placeholder="name@company.com"
-                  className={`w-full bg-slate-50/70 border rounded-xl pl-10 pr-9 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white transition-all font-medium ${
-                    clientErrors.email
-                      ? 'border-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-400'
-                      : isEmailValid
+                  className={`w-full bg-slate-50/70 border rounded-xl pl-10 pr-9 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white transition-all font-medium ${clientErrors.email
+                    ? 'border-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-400'
+                    : isEmailValid
                       ? 'border-emerald-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400'
                       : 'border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                  }`}
+                    }`}
                 />
                 {isEmailValid && (
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-emerald-500">
@@ -189,13 +188,12 @@ export const LoginPage: React.FC = () => {
                     setClientErrors((prev) => ({ ...prev, password: validatePassword(password) }));
                   }}
                   placeholder="••••••••"
-                  className={`w-full bg-slate-50/70 border rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white transition-all font-medium ${
-                    clientErrors.password
-                      ? 'border-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-400'
-                      : isPasswordValid
+                  className={`w-full bg-slate-50/70 border rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white transition-all font-medium ${clientErrors.password
+                    ? 'border-rose-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-400'
+                    : isPasswordValid
                       ? 'border-emerald-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400'
                       : 'border-slate-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
-                  }`}
+                    }`}
                 />
                 <button
                   type="button"
@@ -244,13 +242,13 @@ export const LoginPage: React.FC = () => {
 
           {/* Quick Demo Access Bar */}
           <div className="mt-5 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-1.5 mb-2.5 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+            {/* <div className="flex items-center gap-1.5 mb-2.5 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
               <Sparkles className="w-3 h-3 text-blue-500" />
               <span>Select Preset Persona</span>
-            </div>
+            </div> */}
 
-            <div className="grid grid-cols-3 gap-2">
-              {/* Supervisor (Owner) */}
+            {/* <div className="grid grid-cols-3 gap-2">
+              Supervisor (Owner)
               <button
                 type="button"
                 onClick={() => handleQuickFill('samkanalytics@gmail.com', 'Admin@123')}
@@ -265,7 +263,7 @@ export const LoginPage: React.FC = () => {
                 </span>
               </button>
 
-              {/* Admin */}
+              Admin
               <button
                 type="button"
                 onClick={() => handleQuickFill('sarah.admin@gridutil.com', 'Admin@123')}
@@ -280,7 +278,7 @@ export const LoginPage: React.FC = () => {
                 </span>
               </button>
 
-              {/* Employee */}
+              Employee
               <button
                 type="button"
                 onClick={() => handleQuickFill('david.field@gridutil.com', 'Admin@123')}
@@ -294,14 +292,14 @@ export const LoginPage: React.FC = () => {
                   No money
                 </span>
               </button>
-            </div>
+            </div> */}
           </div>
         </div>
 
         {/* Footer info without scrolling */}
-        <div className="text-center text-[11px] text-slate-400 mt-4">
+        {/* <div className="text-center text-[11px] text-slate-400 mt-4">
           Default Owner (Supervisor): <span className="text-slate-600 font-semibold font-mono">samkanalytics@gmail.com</span> · Password: <span className="text-slate-600 font-semibold font-mono">Admin@123</span>
-        </div>
+        </div> */}
       </motion.div>
     </div>
   );

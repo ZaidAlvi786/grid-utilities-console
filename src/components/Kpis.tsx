@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import { saveOverrideThunk } from '../store/dbSlice';
-import { parseExcelDate, getFilterFingerprint } from '../utils/helpers';
+import { getFilterFingerprint, getWorkOrderReportingDate } from '../utils/helpers';
 import { Pencil, CheckCircle, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -27,7 +27,7 @@ export const Kpis: React.FC = () => {
       if (filters.area !== 'All areas' && w.area !== filters.area) return false;
       // Order date range filters
       if (w.customer_need_date) {
-        const dateVal = parseExcelDate(w.customer_need_date);
+        const dateVal = getWorkOrderReportingDate(w);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return false;
           if (filters.endDate && dateVal > filters.endDate) return false;
@@ -75,7 +75,7 @@ export const Kpis: React.FC = () => {
   const baseExpense = foremanBookedDays * dailyExpenseRate;
   const totalExpense = baseExpense + activeOverride.add_amount - activeOverride.remove_amount;
   const computedMargin = invoicedAmount - totalExpense;
-  const profitMargin = activeOverride.profit_margin_override !== null ? activeOverride.profit_margin_override : computedMargin;
+  const profitMargin: number = (activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) ? activeOverride.profit_margin_override : computedMargin;
   const profitMarginPct = invoicedAmount > 0 ? (profitMargin / invoicedAmount) * 100 : 0;
 
   const [addExpense, setAddExpense] = useState('');
@@ -87,7 +87,7 @@ export const Kpis: React.FC = () => {
   useEffect(() => {
     setAddExpense(activeOverride.add_amount > 0 ? activeOverride.add_amount.toString() : '');
     setRemoveExpense(activeOverride.remove_amount > 0 ? activeOverride.remove_amount.toString() : '');
-    setMarginOverride(activeOverride.profit_margin_override !== null ? activeOverride.profit_margin_override.toString() : '');
+    setMarginOverride((activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) ? activeOverride.profit_margin_override.toString() : '');
   }, [activeOverride]);
 
   const handleSaveOverrides = (updates: any) => {
@@ -323,7 +323,7 @@ export const Kpis: React.FC = () => {
           </div>
           <div className="text-[9px] font-mono text-slate-400 mt-4">
             {formatCurrency(invoicedAmount)} - {formatCurrency(totalExpense)} = {formatCurrency(computedMargin)}
-            {activeOverride.profit_margin_override !== null && (
+            {(activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) && (
               <span className="text-amber-600 font-semibold"> (Overridden)</span>
             )}
           </div>

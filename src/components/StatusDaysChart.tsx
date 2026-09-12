@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { parseExcelDate } from '../utils/helpers';
+import { getWorkOrderReportingDate } from '../utils/helpers';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -57,7 +57,7 @@ export const StatusDaysChart: React.FC = () => {
       if (filters.area !== 'All areas' && wo.area !== filters.area) return;
       // Order date range filters
       if (wo.customer_need_date) {
-        const dateVal = parseExcelDate(wo.customer_need_date);
+        const dateVal = getWorkOrderReportingDate(wo);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return;
           if (filters.endDate && dateVal > filters.endDate) return;
