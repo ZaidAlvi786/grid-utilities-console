@@ -15,7 +15,7 @@ import {
 } from '../store/dbSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store/store';
-import { parseHoursToDecimal, parseExcelDate } from '../utils/helpers';
+import { parseHoursToDecimal, parseExcelDate, classifyLaborRole, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
 import { X, UploadCloud, AlertCircle, FileText, CheckCircle, Clock, ArrowRight } from 'lucide-react';
 import {
   downloadWorkOrderTemplate,
@@ -28,21 +28,36 @@ interface UploadModalProps {
 }
 
 const TIMESHEET_HEADER_MAP: Record<string, string> = {
+  'First name': 'employee_first_name',
+  'Last name': 'employee_last_name',
+  'User Name': 'employee_name',
+  'Employee Name': 'employee_name',
+  Date: 'shift_date',
+  date: 'shift_date',
+  'Shift start': 'clock_in',
+  'Shift Start': 'clock_in',
+  'Shift end': 'clock_out',
+  'Shift End': 'clock_out',
   Type: 'work_order_number',
   type: 'work_order_number',
-  'First name': 'employee_first_name',
-  first_name: 'employee_first_name',
-  'Last name': 'employee_last_name',
-  last_name: 'employee_last_name',
-  'Start Date': 'shift_date',
-  start_date: 'shift_date',
-  date: 'shift_date',
-  In: 'clock_in',
-  in: 'clock_in',
-  Out: 'clock_out',
-  out: 'clock_out',
+  'Work Order': 'work_order_number',
   'Shift hours': 'shift_hours_raw',
-  shift_hours: 'shift_hours_raw',
+  'Total hours': 'shift_hours_raw',
+  'Total Hours': 'shift_hours_raw',
+  'Total hours (inc. auto-deductions)': 'shift_hours_raw',
+  'Total cost': 'line_labor_cost',
+  'Total Cost': 'line_labor_cost',
+  'Overtime hours': 'ot_hours_raw',
+  'Overtime Hours': 'ot_hours_raw',
+  'Overtime': 'ot_hours_raw',
+  'overtime': 'ot_hours_raw',
+  'OT cost': 'ot_cost_raw',
+  'OT Cost': 'ot_cost_raw',
+  ot_cost: 'ot_cost_raw',
+  'Overtime cost': 'ot_cost_raw',
+  'Overtime Cost': 'ot_cost_raw',
+  'Overtime pay': 'ot_cost_raw',
+  'Overtime Pay': 'ot_cost_raw',
   'Hourly rate (USD)': 'hourly_rate',
   hourly_rate: 'hourly_rate',
   rate: 'hourly_rate',
@@ -50,7 +65,7 @@ const TIMESHEET_HEADER_MAP: Record<string, string> = {
 
 export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
   const dispatch = useDispatch();
-  const { reconciliationSummary } = useSelector((state: RootState) => state.db);
+  const { workOrders, laborRateCategories, reconciliationSummary } = useSelector((state: RootState) => state.db);
   const [uploadType, setUploadType] = useState<'work_orders' | 'invoices' | 'timesheet' | 'master'>('work_orders');
   const [errorList, setErrorList] = useState<{ row: number; field: string; message: string }[]>([]);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
@@ -165,6 +180,22 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
           normalizedRow[normalizedKey] = value;
         });
 
+        if (uploadType === 'invoices') {
+          const invNum = normalizedRow['invoice_number'] || normalizedRow['Invoice #'];
+          if (
+            invNum === null ||
+            invNum === undefined ||
+            String(invNum).trim() === '' ||
+            String(invNum).trim() === '0' ||
+            String(invNum).trim().toLowerCase() === 'null' ||
+            String(invNum).trim().toLowerCase() === 'undefined' ||
+            String(invNum).trim().toLowerCase() === 'n/a'
+          ) {
+            return; // Skip rows where invoice number is empty
+          }
+          normalizedRow['invoice_number'] = String(invNum).trim();
+        }
+
         if (uploadType === 'timesheet') {
           const rawWo = normalizedRow['work_order_number'] || normalizedRow['Type'];
           if (!rawWo || rawWo === '0' || rawWo === '' || String(rawWo).toLowerCase().includes('no record')) {
@@ -179,17 +210,40 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
             normalizedRow['shift_hours_raw'] || normalizedRow['shift_hours'] || normalizedRow['Hours'] || 0
           );
           const hourlyRate = parseFloat(normalizedRow['hourly_rate'] || normalizedRow['rate'] || 0);
-          const lineCost = parseFloat((shiftHours * hourlyRate).toFixed(2));
+
+          const otHours = normalizedRow['ot_hours_raw'] !== undefined
+            ? parseHoursToDecimal(normalizedRow['ot_hours_raw'])
+            : (shiftHours > 8 ? parseFloat((shiftHours - 8).toFixed(2)) : 0);
+
+          const otCost = normalizedRow['ot_cost_raw'] !== undefined
+            ? parseFloat(normalizedRow['ot_cost_raw']) || 0
+            : parseFloat((otHours * hourlyRate * 1.5).toFixed(2));
+
+          const lineCost = normalizedRow['line_labor_cost'] !== undefined
+            ? parseFloat(normalizedRow['line_labor_cost']) || 0
+            : parseFloat((shiftHours * hourlyRate).toFixed(2));
+
           const shiftDate = parseExcelDate(normalizedRow['shift_date']) || normalizedRow['shift_date'] || new Date().toISOString().split('T')[0];
 
           normalizedRow['work_order_number'] = String(rawWo).trim();
           normalizedRow['employee_name'] = fullName;
           normalizedRow['shift_hours'] = shiftHours;
           normalizedRow['hourly_rate'] = hourlyRate;
+          normalizedRow['ot_hours'] = otHours;
+          normalizedRow['ot_cost'] = otCost;
           normalizedRow['line_labor_cost'] = lineCost;
           normalizedRow['shift_date'] = shiftDate;
           normalizedRow['clock_in'] = normalizedRow['clock_in'] || null;
           normalizedRow['clock_out'] = normalizedRow['clock_out'] || null;
+
+          const parentWo = workOrders.find((w: any) => String(w.work_order_number).trim() === String(rawWo).trim());
+          const roleCat = classifyLaborRole(
+            hourlyRate,
+            laborRateCategories && laborRateCategories.length > 0 ? laborRateCategories : DEFAULT_LABOR_RATE_CATEGORIES,
+            fullName,
+            parentWo
+          );
+          normalizedRow['role_category'] = roleCat;
         }
 
         const parsed = schema.safeParse(normalizedRow);

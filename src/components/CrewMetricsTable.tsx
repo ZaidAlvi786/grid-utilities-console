@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { getWorkOrderReportingDate } from '../utils/helpers';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import { setFilters } from '../store/filtersSlice';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 export const CrewMetricsTable: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -16,6 +17,10 @@ export const CrewMetricsTable: React.FC = () => {
 
   const [viewMode, setViewMode] = useState<'General Foreman' | 'Foreman'>('Foreman');
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
   const metrics = useMemo(() => {
     const GFData: Record<string, { name: string; type: 'GF'; wos: number; complete: number; days: number; revenue: number; expense: number; margin: number; cycle: number; onTime: number; discipline: number; expired: number; doneVal: number; realization: number; renbill: number; unbilled: number; kmJob: number; prereqs: number; areas: number }> = {};
     const FData: Record<string, { name: string; gf: string; type: 'Foreman'; wos: number; complete: number; days: number; revenue: number; expense: number; margin: number; cycle: number; onTime: number; discipline: number; expired: number; doneVal: number; realization: number; renbill: number; unbilled: number; kmJob: number; prereqs: number; areas: number }> = {};
@@ -25,6 +30,7 @@ export const CrewMetricsTable: React.FC = () => {
     
     invoices.forEach(inv => {
       if (filters.status !== 'All statuses' && inv.status !== filters.status) return;
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(inv.work_order_number || '')) return;
       const wo = workOrders.find(w => w.work_order_number === inv.work_order_number);
       if (wo) {
         const f = wo.foreman;
@@ -38,6 +44,7 @@ export const CrewMetricsTable: React.FC = () => {
     });
 
     workOrders.forEach(wo => {
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(wo.work_order_number)) return;
       // Order date range filters
       if (wo.customer_need_date) {
         const dateVal = getWorkOrderReportingDate(wo);
@@ -96,6 +103,20 @@ export const CrewMetricsTable: React.FC = () => {
 
   const currentRows = viewMode === 'General Foreman' ? metrics.gfs : metrics.foremen;
 
+  // Reset pagination on view mode, filter, or page size change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [viewMode, filters, pageSize]);
+
+  // Paginated rows calculation
+  const totalPages = Math.max(1, Math.ceil(currentRows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, currentRows.length);
+  const paginatedRows = useMemo(() => {
+    return currentRows.slice(startIndex, endIndex);
+  }, [currentRows, startIndex, endIndex]);
+
   const handleRowClick = (row: any) => {
     if (row.type === 'GF') {
       dispatch(setFilters({ generalForeman: row.name, foreman: [] }));
@@ -120,23 +141,39 @@ export const CrewMetricsTable: React.FC = () => {
               : 'Click a row to filter dashboard to that crew. Money calculations run on booked days model ($5,800/day).'}
           </p>
         </div>
-        <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
-          <button
-            onClick={() => setViewMode('General Foreman')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-              viewMode === 'General Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            General Foreman
-          </button>
-          <button
-            onClick={() => setViewMode('Foreman')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-              viewMode === 'Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Foreman
-          </button>
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+            <button
+              onClick={() => setViewMode('General Foreman')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                viewMode === 'General Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              General Foreman
+            </button>
+            <button
+              onClick={() => setViewMode('Foreman')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+                viewMode === 'Foreman' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Foreman
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <label className="text-[11px] font-semibold text-slate-400">Rows:</label>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:border-blue-500"
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -154,7 +191,7 @@ export const CrewMetricsTable: React.FC = () => {
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {currentRows.map(row => (
+          {paginatedRows.map(row => (
             <tr
               key={row.name}
               onClick={() => handleRowClick(row)}
@@ -180,8 +217,70 @@ export const CrewMetricsTable: React.FC = () => {
               )}
             </tr>
           ))}
+          {paginatedRows.length === 0 && (
+            <tr>
+              <td colSpan={8} className="py-8 text-center text-slate-400">
+                No crew performance records found for current filters.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
+
+      {/* Pagination Bar */}
+      <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-slate-500">
+        <div className="font-medium">
+          {currentRows.length === 0 ? (
+            <span>0 entries</span>
+          ) : (
+            <span>
+              Showing <strong className="text-slate-800">{startIndex + 1}</strong> to{' '}
+              <strong className="text-slate-800">{endIndex}</strong> of{' '}
+              <strong className="text-slate-800">{currentRows.length}</strong> {viewMode === 'General Foreman' ? 'General Foremen' : 'Foremen'}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 select-none">
+          <button
+            onClick={() => setCurrentPage(1)}
+            disabled={safeCurrentPage <= 1}
+            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="First Page"
+          >
+            <ChevronsLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={safeCurrentPage <= 1}
+            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Previous Page"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+
+          <span className="px-2.5 py-1 font-mono text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg">
+            Page <strong className="text-blue-600">{safeCurrentPage}</strong> of {totalPages}
+          </span>
+
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={safeCurrentPage >= totalPages}
+            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Next Page"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={safeCurrentPage >= totalPages}
+            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Last Page"
+          >
+            <ChevronsRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

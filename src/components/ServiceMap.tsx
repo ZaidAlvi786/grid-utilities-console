@@ -33,6 +33,7 @@ export const ServiceMap: React.FC = () => {
 
     invoices.forEach(inv => {
       if (filters.status !== 'All statuses' && inv.status !== filters.status) return;
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(inv.work_order_number || '')) return;
       const wo = workOrders.find(w => w.work_order_number === inv.work_order_number);
       if (wo) {
         const f = wo.foreman;
@@ -46,6 +47,7 @@ export const ServiceMap: React.FC = () => {
     });
 
     workOrders.forEach(wo => {
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(wo.work_order_number)) return;
       if (wo.customer_need_date) {
         const dateVal = getWorkOrderReportingDate(wo);
         if (dateVal) {

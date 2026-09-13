@@ -2,15 +2,18 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store/store';
 import { setFilters, resetFilters } from '../store/filtersSlice';
-import { RotateCcw, ChevronDown, RefreshCw, Sparkles, X } from 'lucide-react';
+import { RotateCcw, ChevronDown, RefreshCw, Sparkles, X, Search, Hash } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const Filters: React.FC = () => {
   const dispatch = useDispatch();
   const filters = useSelector((state: RootState) => state.filters);
-  const { workOrders } = useSelector((state: RootState) => state.db);
+  const { workOrders, invoices, laborEntries } = useSelector((state: RootState) => state.db);
   const [isOpen, setIsOpen] = useState(false);
+  const [isWoOpen, setIsWoOpen] = useState(false);
+  const [woSearchQuery, setWoSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const woDropdownRef = useRef<HTMLDivElement>(null);
 
   // Sync button toast state
   const [showSyncToast, setShowSyncToast] = useState(false);
@@ -28,6 +31,9 @@ export const Filters: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+      }
+      if (woDropdownRef.current && !woDropdownRef.current.contains(event.target as Node)) {
+        setIsWoOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -49,6 +55,39 @@ export const Filters: React.FC = () => {
     return Array.from(sets);
   }, [workOrders, filters.generalForeman]);
 
+  // List of all unique Work Order numbers, scoped by crew if selected
+  const woList = useMemo(() => {
+    const sets = new Set<string>();
+    workOrders.forEach((w) => {
+      if (filters.generalForeman !== 'All crews' && w.general_foreman !== filters.generalForeman) return;
+      if (filters.foreman.length > 0 && !filters.foreman.includes(w.foreman)) return;
+      if (w.work_order_number) sets.add(String(w.work_order_number).trim());
+    });
+    // Also include labor entries work orders
+    laborEntries.forEach((e) => {
+      if (e.work_order_number) {
+        if (filters.generalForeman !== 'All crews' || filters.foreman.length > 0) {
+          const wo = workOrders.find((w) => w.work_order_number === e.work_order_number);
+          if (filters.generalForeman !== 'All crews' && wo?.general_foreman !== filters.generalForeman) return;
+          if (filters.foreman.length > 0 && (!wo?.foreman || !filters.foreman.includes(wo.foreman))) return;
+        }
+        sets.add(String(e.work_order_number).trim());
+      }
+    });
+    // Also include invoices' work order numbers if workOrders is empty
+    if (sets.size === 0) {
+      invoices.forEach((i) => {
+        if (i.work_order_number) sets.add(String(i.work_order_number).trim());
+      });
+    }
+    return Array.from(sets).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [workOrders, invoices, laborEntries, filters.generalForeman, filters.foreman]);
+
+  const filteredWoList = useMemo(() => {
+    if (!woSearchQuery.trim()) return woList;
+    return woList.filter((wo) => wo.toLowerCase().includes(woSearchQuery.toLowerCase().trim()));
+  }, [woList, woSearchQuery]);
+
   const handleForemanToggle = (foremanName: string) => {
     let current = [...filters.foreman];
     if (current.includes(foremanName)) {
@@ -65,6 +104,29 @@ export const Filters: React.FC = () => {
     } else {
       dispatch(setFilters({ foreman: [...foremanList] }));
     }
+  };
+
+  const handleWoToggle = (woNumber: string) => {
+    let current = [...filters.workOrderNumbers];
+    if (current.includes(woNumber)) {
+      current = current.filter((w) => w !== woNumber);
+    } else {
+      current.push(woNumber);
+    }
+    dispatch(setFilters({ workOrderNumbers: current }));
+  };
+
+  const handleSelectAllWos = () => {
+    if (filters.workOrderNumbers.length === woList.length && woList.length > 0) {
+      dispatch(setFilters({ workOrderNumbers: [] }));
+    } else {
+      dispatch(setFilters({ workOrderNumbers: [...woList] }));
+    }
+  };
+
+  const handleClearWos = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    dispatch(setFilters({ workOrderNumbers: [] }));
   };
 
   return (
@@ -111,7 +173,7 @@ export const Filters: React.FC = () => {
       </div>
 
       {/* Foreman dropdown */}
-      <div className="flex flex-col gap-1 relative w-64" ref={dropdownRef}>
+      <div className="flex flex-col gap-1 relative w-56" ref={dropdownRef}>
         <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Foreman</label>
         {filters.generalForeman === 'All crews' ? (
           <select
@@ -127,12 +189,14 @@ export const Filters: React.FC = () => {
               onClick={() => setIsOpen(!isOpen)}
               className="w-full px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 flex justify-between items-center cursor-pointer font-medium text-left"
             >
-              {filters.foreman.length === 0
-                ? 'Select Foreman'
-                : filters.foreman.length === foremanList.length
-                ? 'All foremen selected'
-                : `${filters.foreman.length} foremen selected`}
-              <ChevronDown className="w-4 h-4 text-slate-400" />
+              <span className="truncate">
+                {filters.foreman.length === 0
+                  ? 'Select Foreman'
+                  : filters.foreman.length === foremanList.length
+                  ? 'All foremen selected'
+                  : `${filters.foreman.length} foremen selected`}
+              </span>
+              <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0 ml-1" />
             </button>
             {isOpen && (
               <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto p-2 space-y-1">
@@ -160,13 +224,128 @@ export const Filters: React.FC = () => {
                       onChange={() => {}}
                       className="rounded text-blue-600 focus:ring-blue-500 pointer-events-none"
                     />
-                    {fore}
+                    <span className="truncate">{fore}</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
         )}
+      </div>
+
+      {/* Work Order Number Multi-Select Filter */}
+      <div className="flex flex-col gap-1 relative w-64" ref={woDropdownRef}>
+        <div className="flex items-center justify-between">
+          <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500 flex items-center gap-1">
+            <Hash className="w-3 h-3 text-slate-400" />
+            Work Order #
+          </label>
+          {filters.workOrderNumbers.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearWos}
+              className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+            >
+              Clear ({filters.workOrderNumbers.length})
+            </button>
+          )}
+        </div>
+        <div className="w-full">
+          <button
+            type="button"
+            onClick={() => setIsWoOpen(!isWoOpen)}
+            className={`w-full px-3 py-1.5 text-sm bg-white border ${
+              filters.workOrderNumbers.length > 0 ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-300'
+            } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 flex justify-between items-center cursor-pointer font-medium text-left`}
+          >
+            <span className="truncate">
+              {filters.workOrderNumbers.length === 0
+                ? 'All Work Orders'
+                : filters.workOrderNumbers.length === 1
+                ? `#${filters.workOrderNumbers[0]}`
+                : filters.workOrderNumbers.length === woList.length && woList.length > 0
+                ? 'All Work Orders selected'
+                : `${filters.workOrderNumbers.length} WOs selected`}
+            </span>
+            <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+              {filters.workOrderNumbers.length > 0 && (
+                <span
+                  onClick={handleClearWos}
+                  className="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Clear work orders"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            </div>
+          </button>
+
+          {isWoOpen && (
+            <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-72 flex flex-col p-2">
+              {/* Search Bar */}
+              <div className="relative mb-2">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search work order #..."
+                  value={woSearchQuery}
+                  onChange={(e) => setWoSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1 text-xs bg-slate-50 border border-slate-200 rounded-md focus:outline-none focus:bg-white focus:border-blue-500"
+                  autoFocus
+                />
+              </div>
+
+              {/* Action Bar */}
+              <div className="flex items-center justify-between px-1 pb-1.5 border-b border-slate-100 text-[11px] font-semibold text-slate-600">
+                <button
+                  type="button"
+                  onClick={handleSelectAllWos}
+                  className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                >
+                  {filters.workOrderNumbers.length === woList.length && woList.length > 0
+                    ? 'Deselect All'
+                    : 'Select All'}
+                </button>
+                <span className="text-slate-400 text-[10px]">
+                  {woList.length} total {woList.length === 1 ? 'order' : 'orders'}
+                </span>
+              </div>
+
+              {/* Scrollable Work Orders List */}
+              <div className="overflow-y-auto flex-1 mt-1 space-y-0.5 max-h-48 pr-1">
+                {filteredWoList.length === 0 ? (
+                  <div className="text-center py-4 text-xs text-slate-400">
+                    {woList.length === 0 ? 'No work orders available' : 'No matching work order'}
+                  </div>
+                ) : (
+                  filteredWoList.map((woNum) => {
+                    const isChecked = filters.workOrderNumbers.includes(woNum);
+                    return (
+                      <div
+                        key={woNum}
+                        onClick={() => handleWoToggle(woNum)}
+                        className={`flex items-center justify-between p-1.5 hover:bg-blue-50/70 rounded cursor-pointer text-xs transition-colors ${
+                          isChecked ? 'bg-blue-50/40 text-blue-900 font-semibold' : 'text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}}
+                            className="rounded text-blue-600 focus:ring-blue-500 pointer-events-none"
+                          />
+                          <span className="font-mono text-[11px] truncate">#{woNum}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Invoice Status */}
@@ -180,6 +359,10 @@ export const Filters: React.FC = () => {
           <option value="All statuses">All statuses</option>
           <option value="Approved">Approved</option>
           <option value="Unapproved">Unapproved</option>
+          <option value="Draft">Draft</option>
+          <option value="Pending Approval">Pending Approval</option>
+          <option value="Voided">Voided</option>
+          <option value="Disputed">Disputed</option>
         </select>
       </div>
 

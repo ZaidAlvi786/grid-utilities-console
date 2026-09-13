@@ -53,79 +53,69 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
+      {/* Global Filter Bar (Reporting Date, GF, Foremen, Work Orders, Status, Sync & Reset) */}
+      <Filters />
+
       {activeTab === 'dashboard' ? (
-        <>
-          <Filters />
-
-          <main className="flex-1 flex flex-col gap-6 p-4 sm:p-6 max-w-[1600px] w-full mx-auto">
-            {/* Loading Indicator */}
-            <AnimatePresence>
-              {status === 'loading' && (
-                <motion.div
-                  initial={{ opacity: 0, y: -5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl font-mono"
-                >
-                  <div className="w-2.5 h-2.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                  <span>Connecting to persistent Supabase cloud database & syncing records...</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* KPIs Row */}
-            <Kpis />
-
-            {/* Crew Performance Metrics (Adapts columns per role) */}
-            <CrewMetricsTable />
-
-            {/* 1. Profit Margin + Service Requirements */}
-            {isSupervisor && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <ProfitMarginOverTime />
-                <ApprovedVsUnapprovedChart />
-                {/* <ServiceRequirements /> */}
-              </div>
-            )
-              // : (
-              //   <div className="grid grid-cols-1 gap-6">
-              //     <ServiceRequirements />
-              //   </div>
-              // )
-            }
-            {isAdmin && (
-              <div className="grid grid-cols-1 gap-6">
-                <ApprovedVsUnapprovedChart />
-              </div>
+        <main className="flex-1 flex flex-col gap-6 p-4 sm:p-6 max-w-[1600px] w-full mx-auto">
+          {/* Loading Indicator */}
+          <AnimatePresence>
+            {status === 'loading' && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl font-mono"
+              >
+                <div className="w-2.5 h-2.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <span>Connecting to persistent Supabase cloud database & syncing records...</span>
+              </motion.div>
             )}
+          </AnimatePresence>
 
-            {/* 2. Approved Vs Unapproved (+ Profit Margin Performance Service Map for Supervisor) */}
-            {isSupervisor && (
-              <div className="grid grid-cols-1 gap-6">
+          {/* KPIs Row */}
+          <Kpis />
 
-                <ServiceMap />
-              </div>
-            )}
+          {/* Crew Performance Metrics (Adapts columns per role) */}
+          <CrewMetricsTable />
 
-            {/* {isAdmin && (
-              <div className="grid grid-cols-1 gap-6">
-                <ApprovedVsUnapprovedChart />
-              </div>
-            )} */}
+          {/* 1. Profit Margin + Service Requirements */}
+          {isSupervisor && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ProfitMarginOverTime />
+              <ApprovedVsUnapprovedChart />
+            </div>
+          )}
+          {isAdmin && (
+            <div className="grid grid-cols-1 gap-6">
+              <ApprovedVsUnapprovedChart />
+            </div>
+          )}
 
-            {/* 3. Status Categories by Days + Status Count Percentage Breakdown */}
-            {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <StatusDaysChart />
-              <StatusPercentage />
-            </div> */}
-
-            {/* Money Aging (Supervisor & Admin only) */}
-            {/* {!isEmployee && <MoneyHeldAging />} */}
-
-          </main>
-        </>
+          {/* 2. Approved Vs Unapproved (+ Profit Margin Performance Service Map for Supervisor) */}
+          {isSupervisor && (
+            <div className="grid grid-cols-1 gap-6">
+              <ServiceMap />
+            </div>
+          )}
+        </main>
       ) : (
         <main className="flex-1 p-4 sm:p-6 max-w-[1600px] w-full mx-auto">
+          {/* Loading Indicator */}
+          <AnimatePresence>
+            {status === 'loading' && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl font-mono mb-6"
+              >
+                <div className="w-2.5 h-2.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <span>Connecting to persistent Supabase cloud database & syncing records...</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <TimesheetTab />
         </main>
       )}
