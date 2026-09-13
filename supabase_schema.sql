@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.invoices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     invoice_number TEXT NOT NULL UNIQUE,
     work_order_number TEXT,
+    -- Statuses: 'Approved', 'Unapproved', 'Draft', 'Pending Approval', 'Voided', 'Disputed' (or any custom status)
     status TEXT NOT NULL DEFAULT 'Unapproved',
     po_number TEXT DEFAULT '',
     total NUMERIC NOT NULL DEFAULT 0,
@@ -38,10 +39,19 @@ CREATE TABLE IF NOT EXISTS public.connecteam_labor_entries (
     clock_out TEXT,
     shift_hours NUMERIC NOT NULL DEFAULT 0,
     hourly_rate NUMERIC NOT NULL DEFAULT 0,
+    ot_hours NUMERIC NOT NULL DEFAULT 0,
+    ot_cost NUMERIC NOT NULL DEFAULT 0,
     line_labor_cost NUMERIC NOT NULL DEFAULT 0,
     role_category TEXT NOT NULL DEFAULT 'unclassified',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure OT columns exist on existing table instances
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS ot_hours NUMERIC NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS ot_cost NUMERIC NOT NULL DEFAULT 0;
 
 -- Create Labor Rate Categories Table if not exists
 CREATE TABLE IF NOT EXISTS public.labor_rate_categories (

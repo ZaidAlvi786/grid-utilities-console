@@ -2,11 +2,11 @@ import { WorkOrder, Invoice, LaborRateCategory } from '../types/schemas';
 
 // Default standard labor rate categories provided by client
 export const DEFAULT_LABOR_RATE_CATEGORIES: LaborRateCategory[] = [
-  { category_name: 'GForeman', standard_rate: 55.70, match_tolerance: 0.10 },
-  { category_name: 'Foreman', standard_rate: 54.70, match_tolerance: 0.10 },
-  { category_name: 'Journeyman', standard_rate: 51.16, match_tolerance: 0.10 },
-  { category_name: 'Apprentice', standard_rate: 38.37, match_tolerance: 0.10 }, // absorbs 38.31
-  { category_name: 'Groundman', standard_rate: 25.66, match_tolerance: 0.10 },
+  { category_name: 'GForeman', standard_rate: 55.70, match_tolerance: 0.20 },
+  { category_name: 'Foreman', standard_rate: 54.70, match_tolerance: 0.20 }, // absorbs 54.57 (diff is 0.13)
+  { category_name: 'Journeyman', standard_rate: 51.16, match_tolerance: 0.20 },
+  { category_name: 'Apprentice', standard_rate: 38.37, match_tolerance: 0.20 }, // absorbs 38.31
+  { category_name: 'Groundman', standard_rate: 25.66, match_tolerance: 0.20 },
 ];
 
 // Helper to format currency
@@ -27,18 +27,34 @@ export const formatHours = (val: number): string => {
   }) + ' hrs';
 };
 
-// Helper to match an actual hourly rate to a role category with tolerance
+// Helper to match an actual hourly rate or WO assignment to a role category
 export const classifyLaborRole = (
   hourlyRate: number,
-  categories: LaborRateCategory[] = DEFAULT_LABOR_RATE_CATEGORIES
+  categories: LaborRateCategory[] = DEFAULT_LABOR_RATE_CATEGORIES,
+  employeeName?: string,
+  workOrder?: { general_foreman?: string; foreman?: string }
 ): string => {
-  if (typeof hourlyRate !== 'number' || isNaN(hourlyRate)) return 'unclassified';
-  for (const cat of categories) {
-    const tolerance = cat.match_tolerance !== undefined ? cat.match_tolerance : 0.10;
-    if (Math.abs(hourlyRate - cat.standard_rate) <= tolerance) {
-      return cat.category_name;
+  // 1. Rate-based matching against configured rate categories with tolerance
+  if (typeof hourlyRate === 'number' && !isNaN(hourlyRate) && hourlyRate > 0) {
+    for (const cat of categories) {
+      const tolerance = cat.match_tolerance !== undefined ? cat.match_tolerance : 0.20;
+      if (Math.abs(hourlyRate - cat.standard_rate) <= tolerance) {
+        return cat.category_name;
+      }
     }
   }
+
+  // 2. Intelligent crew matching against parent Work Order assignments
+  if (employeeName && workOrder) {
+    const normEmp = employeeName.trim().toLowerCase();
+    if (workOrder.general_foreman && workOrder.general_foreman.trim().toLowerCase() === normEmp) {
+      return 'GForeman';
+    }
+    if (workOrder.foreman && workOrder.foreman.trim().toLowerCase() === normEmp) {
+      return 'Foreman';
+    }
+  }
+
   return 'unclassified';
 };
 
@@ -88,9 +104,21 @@ export const runSyntheticJoin = (
   workOrders: WorkOrder[]
 ): Invoice[] => {
   if (workOrders.length === 0) return [];
-  return invoices.map((inv) => {
+  const validInvoices = (invoices || []).filter((inv) => {
+    const invNum = inv['Invoice #'] || inv.invoice_number;
+    return (
+      invNum !== null &&
+      invNum !== undefined &&
+      String(invNum).trim() !== '' &&
+      String(invNum).trim() !== '0' &&
+      String(invNum).trim().toLowerCase() !== 'null' &&
+      String(invNum).trim().toLowerCase() !== 'undefined'
+    );
+  });
+
+  return validInvoices.map((inv) => {
     const po = inv['PO #'] || inv.po_number || '';
-    const invoiceNumber = (inv['Invoice #'] || inv.invoice_number || '').toString();
+    const invoiceNumber = String(inv['Invoice #'] || inv.invoice_number || '').trim();
     const match = po.match(/WO_(\d+)_/);
     let woNumber = match ? match[1] : null;
     let linkSource: 'native' | 'synthetic' = 'native';
@@ -157,6 +185,7 @@ export const getFilterFingerprint = (filters: any): string => {
     endDate: filters.endDate || '',
     generalForeman: filters.generalForeman || 'All',
     foreman: filters.foreman || 'All',
+    workOrderNumbers: filters.workOrderNumbers || [],
     area: filters.area || 'All',
     status: filters.status || 'All',
   });

@@ -1,9 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { supabase } from '../utils/supabaseClient';
 import { Invoice, LaborEntry, LaborRateCategory } from '../types/schemas';
-import { runSyntheticJoin, deriveArea, DEFAULT_LABOR_RATE_CATEGORIES, classifyLaborRole } from '../utils/helpers';
-import workOrdersSeed from '../assets/synthetic_work_orders.json';
-import invoicesSeed from '../assets/synthetic_invoices.json';
+import { runSyntheticJoin, deriveArea, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
 
 export interface ReconciliationSummary {
   uploadedType: 'work_orders' | 'invoices' | 'timesheet' | 'master';
@@ -108,59 +106,12 @@ const upsertInChunks = async (table: string, items: any[], onConflictKey: string
   }
 };
 
-// Generate realistic Connecteam labor seed data for local offline development
-const generateInitialLaborSeed = (wos: any[]): LaborEntry[] => {
-  const names = [
-    { name: 'John Doe', rate: 55.70 },
-    { name: 'Robert Smith', rate: 54.70 },
-    { name: 'Michael Johnson', rate: 51.16 },
-    { name: 'David Williams', rate: 38.37 },
-    { name: 'James Brown', rate: 25.66 },
-    { name: 'Carlos Martinez', rate: 15.00 },
-    { name: 'Luis Garcia', rate: 17.79 },
-    { name: 'Kevin Davis', rate: 30.70 },
-    { name: 'Brian Wilson', rate: 54.57 },
-  ];
-
-  const entries: LaborEntry[] = [];
-  const targetWos = wos.slice(0, 45);
-
-  targetWos.forEach((wo, wIdx) => {
-    const shiftCount = 2 + (wIdx % 4);
-    for (let i = 0; i < shiftCount; i++) {
-      const person = names[(wIdx + i) % names.length];
-      const hours = 8.0 + ((i % 3) === 0 ? 0.5 : 0);
-      const lineCost = parseFloat((hours * person.rate).toFixed(2));
-      const dayOffset = (wIdx * 2 + i) % 30;
-      const d = new Date('2026-08-18');
-      d.setDate(d.getDate() - dayOffset);
-      const shiftDate = d.toISOString().split('T')[0];
-
-      entries.push({
-        id: 'seed-labor-' + wIdx + '-' + i,
-        work_order_number: wo.work_order_number,
-        employee_name: person.name,
-        shift_date: shiftDate,
-        clock_in: '07:00',
-        clock_out: hours === 8.5 ? '15:30' : '15:00',
-        shift_hours: hours,
-        hourly_rate: person.rate,
-        line_labor_cost: lineCost,
-        role_category: classifyLaborRole(person.rate, DEFAULT_LABOR_RATE_CATEGORIES),
-      });
-    }
-  });
-
-  return entries;
-};
-
 const savedTimesheets = loadPersistedTimesheets();
-const initialLaborSeed = savedTimesheets.length > 0 ? savedTimesheets : generateInitialLaborSeed(workOrdersSeed as any);
 
 const initialState: DbState = {
-  workOrders: workOrdersSeed as any,
-  invoices: runSyntheticJoin(invoicesSeed, workOrdersSeed as any),
-  laborEntries: initialLaborSeed,
+  workOrders: [],
+  invoices: [],
+  laborEntries: savedTimesheets,
   laborRateCategories: DEFAULT_LABOR_RATE_CATEGORIES,
   overrides: loadPersistedOverrides(),
   dailyExpenseRate: 5800,
@@ -170,10 +121,11 @@ const initialState: DbState = {
 
 export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
   try {
-    const [wos, invs, ovrs] = await Promise.all([
+    const [wos, invs, ovrs, labor] = await Promise.all([
       fetchAllRows('work_orders'),
       fetchAllRows('invoices'),
-      fetchAllRows('expense_overrides')
+      fetchAllRows('expense_overrides'),
+      fetchAllRows('connecteam_labor_entries')
     ]);
 
     const persistedLabor = loadPersistedTimesheets();
@@ -188,7 +140,7 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
       };
     });
 
-    const parsedWorkOrders = (wos && wos.length > 0 ? wos : workOrdersSeed).map((w: any) => {
+    const parsedWorkOrders = (wos || []).map((w: any) => {
       const isCompleted = w.status === 'Field Complete' || w.status === 'CTCC Completed' || w.status === 'Ready to Bill';
       return {
         ...w,
@@ -200,14 +152,16 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
     });
 
     const parsedInvoices = runSyntheticJoin(
-      invs && invs.length > 0 ? invs : invoicesSeed,
+      invs || [],
       parsedWorkOrders
     );
+
+    const parsedLabor = (labor && labor.length > 0) ? labor : persistedLabor;
 
     return {
       workOrders: parsedWorkOrders,
       invoices: parsedInvoices,
-      laborEntries: persistedLabor.length > 0 ? persistedLabor : initialLaborSeed,
+      laborEntries: parsedLabor,
       laborRateCategories: DEFAULT_LABOR_RATE_CATEGORIES,
       overrides: ovrMap,
     };
@@ -215,9 +169,9 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
     console.error('Error in fetchDbState:', error);
     const persistedLabor = loadPersistedTimesheets();
     return {
-      workOrders: workOrdersSeed as any,
-      invoices: runSyntheticJoin(invoicesSeed, workOrdersSeed as any),
-      laborEntries: persistedLabor.length > 0 ? persistedLabor : initialLaborSeed,
+      workOrders: [],
+      invoices: [],
+      laborEntries: persistedLabor,
       laborRateCategories: DEFAULT_LABOR_RATE_CATEGORIES,
       overrides: loadPersistedOverrides(),
     };
@@ -266,8 +220,20 @@ export const uploadWorkOrdersThunk = createAsyncThunk(
 export const uploadInvoicesThunk = createAsyncThunk(
   'db/uploadInvoices',
   async (invoices: any[]) => {
-    const formatted = invoices.map((inv) => ({
-      invoice_number: String(inv.invoice_number).trim(),
+    const validInvoices = invoices.filter((inv) => {
+      const num = inv.invoice_number || inv['Invoice #'];
+      return (
+        num !== null &&
+        num !== undefined &&
+        String(num).trim() !== '' &&
+        String(num).trim() !== '0' &&
+        String(num).trim().toLowerCase() !== 'null' &&
+        String(num).trim().toLowerCase() !== 'undefined'
+      );
+    });
+
+    const formatted = validInvoices.map((inv) => ({
+      invoice_number: String(inv.invoice_number || inv['Invoice #']).trim(),
       work_order_number: inv.work_order_number ? String(inv.work_order_number).trim() : null,
       status: inv.status || 'Unapproved',
       po_number: inv.po_number || '',
@@ -306,18 +272,35 @@ export const uploadInvoicesThunk = createAsyncThunk(
 export const uploadTimesheetThunk = createAsyncThunk(
   'db/uploadTimesheet',
   async (entries: LaborEntry[]) => {
-    const formatted = entries.map((e) => ({
-      id: e.id || ('labor-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)),
-      work_order_number: String(e.work_order_number).trim(),
-      employee_name: e.employee_name,
-      shift_date: e.shift_date,
-      clock_in: e.clock_in || null,
-      clock_out: e.clock_out || null,
-      shift_hours: e.shift_hours,
-      hourly_rate: e.hourly_rate,
-      line_labor_cost: e.line_labor_cost,
-      role_category: e.role_category,
-    }));
+    const formatted = entries.map((e) => {
+      const otHours = e.ot_hours !== undefined && e.ot_hours !== null && !isNaN(Number(e.ot_hours))
+        ? Number(e.ot_hours)
+        : (e.shift_hours > 8 ? parseFloat((e.shift_hours - 8).toFixed(2)) : 0);
+      const otCost = e.ot_cost !== undefined && e.ot_cost !== null && !isNaN(Number(e.ot_cost)) && Number(e.ot_cost) > 0
+        ? Number(e.ot_cost)
+        : parseFloat((otHours * e.hourly_rate * 1.5).toFixed(2));
+
+      return {
+        id: e.id || ('labor-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)),
+        work_order_number: String(e.work_order_number).trim(),
+        employee_name: e.employee_name,
+        shift_date: e.shift_date,
+        clock_in: e.clock_in || null,
+        clock_out: e.clock_out || null,
+        shift_hours: e.shift_hours,
+        hourly_rate: e.hourly_rate,
+        ot_hours: otHours,
+        ot_cost: otCost,
+        line_labor_cost: e.line_labor_cost,
+        role_category: e.role_category,
+      };
+    });
+
+    try {
+      await upsertInChunks('connecteam_labor_entries', formatted, 'id');
+    } catch (e) {
+      console.warn('Supabase connecteam_labor_entries upsert error:', e);
+    }
 
     return formatted;
   }
@@ -382,13 +365,25 @@ export const uploadJoinedMasterThunk = createAsyncThunk('db/uploadJoinedMaster',
 export const saveOverrideThunk = createAsyncThunk('db/saveOverride', async (override: any) => {
   const formatted = {
     filter_fingerprint: override.filter_fingerprint,
-    add_amount: override.add_amount || 0.0,
-    remove_amount: override.remove_amount || 0.0,
-    profit_margin_override: override.profit_margin_override,
+    add_amount: typeof override.add_amount === 'number' ? override.add_amount : parseFloat(override.add_amount || '0') || 0.0,
+    remove_amount: typeof override.remove_amount === 'number' ? override.remove_amount : parseFloat(override.remove_amount || '0') || 0.0,
+    profit_margin_override: (override.profit_margin_override !== undefined && override.profit_margin_override !== null && override.profit_margin_override !== '')
+      ? (typeof override.profit_margin_override === 'number' ? override.profit_margin_override : parseFloat(override.profit_margin_override))
+      : null,
+    updated_at: new Date().toISOString(),
   };
+
   try {
-    await supabase.from('expense_overrides').upsert(formatted, { onConflict: 'filter_fingerprint' }).select();
-  } catch (e) {}
+    const { error } = await supabase
+      .from('expense_overrides')
+      .upsert(formatted, { onConflict: 'filter_fingerprint' });
+    if (error) {
+      console.warn('Supabase expense_overrides upsert error:', error);
+    }
+  } catch (e) {
+    console.warn('Expense override network error:', e);
+  }
+
   return formatted;
 });
 

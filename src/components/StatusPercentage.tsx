@@ -19,6 +19,7 @@ export const StatusPercentage: React.FC = () => {
     workOrders.forEach(wo => {
       if (filters.generalForeman !== 'All crews' && wo.general_foreman !== filters.generalForeman) return;
       if (filters.foreman.length > 0 && !filters.foreman.includes(wo.foreman)) return;
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(wo.work_order_number)) return;
       if (filters.area !== 'All areas' && wo.area !== filters.area) return;
       // Order date range filters
       if (wo.customer_need_date) {

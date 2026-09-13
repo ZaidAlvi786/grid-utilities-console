@@ -1,4 +1,4 @@
-﻿import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 
 export const downloadWorkOrderTemplate = () => {
   const headers = [
@@ -51,7 +51,7 @@ export const downloadInvoiceTemplate = () => {
 };
 
 export const downloadTimesheetTemplate = () => {
-  const headers = ['Type', 'First name', 'Last name', 'Start Date', 'In', 'Out', 'Shift hours', 'Hourly rate (USD)'];
+  const headers = ['Type', 'First name', 'Last name', 'Start Date', 'In', 'Out', 'Shift hours', 'Hourly rate (USD)', 'OT hours', 'OT cost'];
   const sampleRows = [
     {
       Type: '121213513',
@@ -62,6 +62,8 @@ export const downloadTimesheetTemplate = () => {
       Out: '15:30',
       'Shift hours': '08:30',
       'Hourly rate (USD)': 55.70,
+      'OT hours': '00:30',
+      'OT cost': 41.78,
     },
     {
       Type: '121213513',
@@ -72,6 +74,8 @@ export const downloadTimesheetTemplate = () => {
       Out: '15:30',
       'Shift hours': '08:30',
       'Hourly rate (USD)': 54.70,
+      'OT hours': '00:30',
+      'OT cost': 41.03,
     },
     {
       Type: '121213513',
@@ -82,6 +86,8 @@ export const downloadTimesheetTemplate = () => {
       Out: '15:00',
       'Shift hours': '08:00',
       'Hourly rate (USD)': 38.31,
+      'OT hours': '00:00',
+      'OT cost': 0.00,
     },
     {
       Type: '121213513',
@@ -92,6 +98,8 @@ export const downloadTimesheetTemplate = () => {
       Out: '15:00',
       'Shift hours': '08:00',
       'Hourly rate (USD)': 15.00,
+      'OT hours': '00:00',
+      'OT cost': 0.00,
     }
   ];
 

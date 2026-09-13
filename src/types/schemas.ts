@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 
 export const WorkOrderSchema = z.object({
   id: z.string().uuid().optional(),
@@ -33,12 +33,26 @@ export const WorkOrderSchema = z.object({
   created_at: z.string().optional(),
 });
 
+export const InvoiceStatusEnum = z.enum([
+  'Approved',
+  'Unapproved',
+  'Draft',
+  'Pending Approval',
+  'Voided',
+  'Disputed',
+]);
+export type InvoiceStatus = z.infer<typeof InvoiceStatusEnum> | string;
+
 export const InvoiceSchema = z.object({
   id: z.string().uuid().optional(),
-  invoice_number: z.union([z.number(), z.string()]).transform((val) => val.toString()),
-  created_date: z.any(),
-  status: z.enum(['Approved', 'Unapproved']),
-  po_number: z.string().min(1),
+  invoice_number: z.union([z.number(), z.string()])
+    .transform((val) => (val !== undefined && val !== null ? val.toString().trim() : ''))
+    .refine((val) => val !== '' && val !== '0' && val.toLowerCase() !== 'null' && val.toLowerCase() !== 'undefined', {
+      message: 'Invoice number is required and cannot be empty',
+    }),
+  created_date: z.any().optional(),
+  status: z.union([InvoiceStatusEnum, z.string()]).default('Unapproved'),
+  po_number: z.any().transform((val) => (val !== null && val !== undefined ? val.toString() : '')).optional().default(''),
   work_order_id: z.string().uuid().nullable().optional(),
   work_order_number: z.string().nullable().optional(),
   link_source: z.enum(['native', 'synthetic']).default('synthetic'),
@@ -68,7 +82,7 @@ export const MasterJoinedSchema = z.object({
   
   // Invoice part
   invoice_number: z.union([z.number(), z.string()]).optional().nullable().transform((val) => val ? val.toString() : null),
-  invoice_status: z.enum(['Approved', 'Unapproved']).optional().nullable(),
+  invoice_status: z.union([InvoiceStatusEnum, z.string()]).optional().nullable(),
   po_number: z.string().optional().nullable(),
   total: z.any().transform((val) => val !== null && val !== undefined ? parseFloat(val) : 0.0).optional(),
   created_date: z.any().optional().nullable(),
@@ -98,6 +112,8 @@ export const LaborEntrySchema = z.object({
   clock_out: z.string().nullable().optional(),
   shift_hours: z.number().min(0),
   hourly_rate: z.number().min(0),
+  ot_hours: z.any().transform((v) => (v !== null && v !== undefined && !isNaN(parseFloat(v)) ? parseFloat(v) : 0)).default(0),
+  ot_cost: z.any().transform((v) => (v !== null && v !== undefined && !isNaN(parseFloat(v)) ? parseFloat(v) : 0)).default(0),
   line_labor_cost: z.number().min(0),
   role_category: z.string().default('unclassified'),
   created_at: z.string().optional(),

@@ -5,6 +5,7 @@ export interface FiltersState {
   endDate: string | null;
   generalForeman: string;
   foreman: string[];
+  workOrderNumbers: string[];
   area: string;
   status: string;
 }
@@ -14,6 +15,7 @@ const initialState: FiltersState = {
   endDate: null,
   generalForeman: 'All crews',
   foreman: [],
+  workOrderNumbers: [],
   area: 'All areas',
   status: 'All statuses',
 };

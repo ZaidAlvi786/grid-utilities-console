@@ -24,6 +24,7 @@ export const Kpis: React.FC = () => {
     return workOrders.filter(w => {
       if (filters.generalForeman !== 'All crews' && w.general_foreman !== filters.generalForeman) return false;
       if (filters.foreman.length > 0 && !filters.foreman.includes(w.foreman)) return false;
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(w.work_order_number)) return false;
       if (filters.area !== 'All areas' && w.area !== filters.area) return false;
       // Order date range filters
       if (w.customer_need_date) {
@@ -90,7 +91,7 @@ export const Kpis: React.FC = () => {
     setMarginOverride((activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) ? activeOverride.profit_margin_override.toString() : '');
   }, [activeOverride]);
 
-  const handleSaveOverrides = (updates: any) => {
+  const handleSaveOverrides = async (updates: any) => {
     setSaveState('saving');
     const newOverride = {
       filter_fingerprint: fingerprint,
@@ -98,11 +99,14 @@ export const Kpis: React.FC = () => {
       remove_amount: updates.remove_amount !== undefined ? updates.remove_amount : activeOverride.remove_amount,
       profit_margin_override: updates.profit_margin_override !== undefined ? updates.profit_margin_override : activeOverride.profit_margin_override,
     };
-    setTimeout(async () => {
-      await dispatch(saveOverrideThunk(newOverride) as any);
+    try {
+      await dispatch(saveOverrideThunk(newOverride) as any).unwrap();
       setSaveState('saved');
-      setTimeout(() => setSaveState('idle'), 1000);
-    }, 200);
+      setTimeout(() => setSaveState('idle'), 1500);
+    } catch (e) {
+      console.warn('Error saving override to db:', e);
+      setSaveState('idle');
+    }
   };
 
   const formatCurrency = (num: number) => {
@@ -239,6 +243,12 @@ export const Kpis: React.FC = () => {
                     const val = e.target.value;
                     if (/^\d*\.?\d*$/.test(val)) setAddExpense(val);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSaveOverrides({ add_amount: parseFloat(addExpense || '0') });
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
                   onBlur={() => handleSaveOverrides({ add_amount: parseFloat(addExpense || '0') })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:bg-white focus:border-blue-500"
                 />
@@ -253,6 +263,12 @@ export const Kpis: React.FC = () => {
                     const val = e.target.value;
                     if (/^\d*\.?\d*$/.test(val)) setRemoveExpense(val);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSaveOverrides({ remove_amount: parseFloat(removeExpense || '0') });
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
                   onBlur={() => handleSaveOverrides({ remove_amount: parseFloat(removeExpense || '0') })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:bg-white focus:border-blue-500"
                 />
@@ -261,9 +277,9 @@ export const Kpis: React.FC = () => {
             <div className="flex items-center justify-between mt-2 text-[9px] font-mono text-slate-400">
               <span>{formatCurrency(baseExpense)} + ${activeOverride.add_amount || 0} - ${activeOverride.remove_amount || 0} = {formatCurrency(totalExpense)}</span>
               {saveState === 'saving' ? (
-                <span className="text-blue-500 animate-pulse font-semibold">Saving...</span>
+                <span className="text-blue-500 animate-pulse font-semibold">Saving to DB...</span>
               ) : saveState === 'saved' ? (
-                <span className="text-emerald-600 font-semibold">Saved</span>
+                <span className="text-emerald-600 font-semibold flex items-center gap-1">✓ Saved in DB</span>
               ) : null}
             </div>
           </>
@@ -292,6 +308,14 @@ export const Kpis: React.FC = () => {
                 value={marginOverride}
                 placeholder="Computed margin"
                 onChange={(e) => setMarginOverride(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setShowMarginInput(false);
+                    handleSaveOverrides({
+                      profit_margin_override: marginOverride === '' ? null : parseFloat(marginOverride),
+                    });
+                  }
+                }}
                 onBlur={() => {
                   setShowMarginInput(false);
                   handleSaveOverrides({

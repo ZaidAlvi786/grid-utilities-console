@@ -11,6 +11,7 @@ export const MoneyHeldAging: React.FC = () => {
     const woNumbers = new Set(workOrders.filter(w => {
       if (filters.generalForeman !== 'All crews' && w.general_foreman !== filters.generalForeman) return false;
       if (filters.foreman.length > 0 && !filters.foreman.includes(w.foreman)) return false;
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(w.work_order_number)) return false;
       if (filters.area !== 'All areas' && w.area !== filters.area) return false;
       // Order date range filters
       if (w.customer_need_date) {
