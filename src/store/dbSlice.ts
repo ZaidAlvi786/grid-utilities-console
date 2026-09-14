@@ -97,12 +97,37 @@ const fetchAllRows = async (table: string): Promise<any[]> => {
   return allRows;
 };
 
+// Helper to generate compliant RFC4122 v4 UUIDs for PostgreSQL UUID columns
+export const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+const isValidUUID = (id?: string | null): boolean => {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+};
+
 // Upsert items in safe batches of 500 to prevent payload limits
-const upsertInChunks = async (table: string, items: any[], onConflictKey: string) => {
+const upsertInChunks = async (table: string, items: any[], onConflictKey?: string) => {
   const chunkSize = 500;
   for (let i = 0; i < items.length; i += chunkSize) {
     const chunk = items.slice(i, i + chunkSize);
-    await supabase.from(table).upsert(chunk, { onConflict: onConflictKey });
+    const options: any = {};
+    if (onConflictKey) {
+      options.onConflict = onConflictKey;
+    }
+    const { error } = await supabase.from(table).upsert(chunk, options);
+    if (error) {
+      console.error(`Supabase upsert error on table ${table}:`, error);
+      throw new Error(`Failed to save to ${table}: ${error.message}`);
+    }
   }
 };
 
@@ -157,6 +182,9 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
     );
 
     const parsedLabor = (labor && labor.length > 0) ? labor : persistedLabor;
+    if (labor && labor.length > 0) {
+      savePersistedTimesheets(labor);
+    }
 
     return {
       workOrders: parsedWorkOrders,
@@ -210,9 +238,9 @@ export const uploadWorkOrdersThunk = createAsyncThunk(
       const remotePayload = deduplicatedWos.map(({ date_work_completed, ...rest }) => rest);
       await upsertInChunks('work_orders', remotePayload, 'work_order_number');
       return deduplicatedWos;
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Supabase work orders upsert error:', e);
-      return formatted;
+      throw e;
     }
   }
 );
@@ -262,9 +290,9 @@ export const uploadInvoicesThunk = createAsyncThunk(
 
       await upsertInChunks('invoices', deduplicatedInvoices, 'invoice_number');
       return deduplicatedInvoices;
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Supabase invoices upsert error:', e);
-      return formatted;
+      throw e;
     }
   }
 );
@@ -280,8 +308,10 @@ export const uploadTimesheetThunk = createAsyncThunk(
         ? Number(e.ot_cost)
         : parseFloat((otHours * e.hourly_rate * 1.5).toFixed(2));
 
+      const entryId = isValidUUID(e.id) ? e.id! : generateUUID();
+
       return {
-        id: e.id || ('labor-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)),
+        id: entryId,
         work_order_number: String(e.work_order_number).trim(),
         employee_name: e.employee_name,
         shift_date: e.shift_date,
@@ -298,8 +328,10 @@ export const uploadTimesheetThunk = createAsyncThunk(
 
     try {
       await upsertInChunks('connecteam_labor_entries', formatted, 'id');
-    } catch (e) {
-      console.warn('Supabase connecteam_labor_entries upsert error:', e);
+      savePersistedTimesheets(formatted);
+    } catch (e: any) {
+      console.error('Supabase connecteam_labor_entries upsert error:', e);
+      throw e;
     }
 
     return formatted;
