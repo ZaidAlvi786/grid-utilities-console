@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
-import { LaborEntry } from '../types/schemas';
+import { LaborEntry, WorkOrder } from '../types/schemas';
 import { formatCurrency, formatHours, classifyLaborRole, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
 import {
   Users,
@@ -41,11 +41,34 @@ export const TimesheetTab: React.FC = () => {
 
   // Fast lookup for parent Work Order details
   const woMap = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, WorkOrder>();
     workOrders.forEach((w) => {
-      map.set(w.work_order_number, w);
+      if (w.work_order_number) {
+        map.set(String(w.work_order_number).trim(), w);
+      }
     });
     return map;
+  }, [workOrders]);
+
+  // Company-wide supervisory rosters to ensure consistent crew categorization across all work orders
+  const gfNamesSet = useMemo(() => {
+    const set = new Set<string>();
+    workOrders.forEach((w) => {
+      if (w.general_foreman) {
+        set.add(w.general_foreman.trim().toLowerCase());
+      }
+    });
+    return set;
+  }, [workOrders]);
+
+  const foremanNamesSet = useMemo(() => {
+    const set = new Set<string>();
+    workOrders.forEach((w) => {
+      if (w.foreman) {
+        set.add(w.foreman.trim().toLowerCase());
+      }
+    });
+    return set;
   }, [workOrders]);
 
   const getEntryOtHours = (e: LaborEntry): number => {
@@ -59,16 +82,31 @@ export const TimesheetTab: React.FC = () => {
     return parseFloat((otH * e.hourly_rate * 1.5).toFixed(2));
   };
 
+  const getEntryRegularHours = (e: LaborEntry): number => {
+    const otH = getEntryOtHours(e);
+    return Math.max(0, parseFloat((e.shift_hours - otH).toFixed(2)));
+  };
+
+  const getEntryRegularCost = (e: LaborEntry): number => {
+    const regH = getEntryRegularHours(e);
+    return parseFloat((regH * e.hourly_rate).toFixed(2));
+  };
+
+  const getEntryLaborCost = (e: LaborEntry): number => {
+    const regCost = getEntryRegularCost(e);
+    const otCost = getEntryOtCost(e);
+    return parseFloat((regCost + otCost).toFixed(2));
+  };
+
   const getEntryRole = (entry: LaborEntry): string => {
-    if (entry.role_category && entry.role_category !== 'unclassified') {
-      return entry.role_category;
-    }
-    const wo = woMap.get(entry.work_order_number);
+    const wo = woMap.get(String(entry.work_order_number || '').trim());
     return classifyLaborRole(
       entry.hourly_rate,
       laborRateCategories && laborRateCategories.length > 0 ? laborRateCategories : DEFAULT_LABOR_RATE_CATEGORIES,
       entry.employee_name,
-      wo
+      wo,
+      gfNamesSet,
+      foremanNamesSet
     );
   };
 
@@ -77,10 +115,10 @@ export const TimesheetTab: React.FC = () => {
     setCurrentPage(1);
   }, [searchQuery, selectedRoleFilter, filters, pageSize]);
 
-  // Base filtered entries (before role filter is applied)
+  // Base filtered entries (before local role filter is applied)
   const baseFilteredEntries = useMemo(() => {
     return laborEntries.filter((entry) => {
-      const wo = woMap.get(entry.work_order_number);
+      const wo = woMap.get(String(entry.work_order_number || '').trim());
       const gf = wo?.general_foreman || 'Unassigned GF';
       const f = wo?.foreman || 'Unassigned Foreman';
       const area = wo?.area || '';
@@ -102,7 +140,7 @@ export const TimesheetTab: React.FC = () => {
 
       return matchesSearch;
     });
-  }, [laborEntries, woMap, filters, searchQuery, laborRateCategories]);
+  }, [laborEntries, woMap, filters, searchQuery]);
 
   // Filtered entries linked to role filter
   const filteredEntries = useMemo(() => {
@@ -113,7 +151,7 @@ export const TimesheetTab: React.FC = () => {
         ? roleCat === 'unclassified'
         : roleCat.toLowerCase() === selectedRoleFilter.toLowerCase();
     });
-  }, [baseFilteredEntries, selectedRoleFilter, woMap, laborRateCategories]);
+  }, [baseFilteredEntries, selectedRoleFilter, woMap, laborRateCategories, gfNamesSet, foremanNamesSet]);
 
   // Sorted entries
   const sortedEntries = useMemo(() => {
@@ -122,11 +160,11 @@ export const TimesheetTab: React.FC = () => {
       let bVal: any = b[sortField as keyof LaborEntry];
 
       if (sortField === 'general_foreman') {
-        aVal = woMap.get(a.work_order_number)?.general_foreman || '';
-        bVal = woMap.get(b.work_order_number)?.general_foreman || '';
+        aVal = woMap.get(String(a.work_order_number || '').trim())?.general_foreman || '';
+        bVal = woMap.get(String(b.work_order_number || '').trim())?.general_foreman || '';
       } else if (sortField === 'foreman') {
-        aVal = woMap.get(a.work_order_number)?.foreman || '';
-        bVal = woMap.get(b.work_order_number)?.foreman || '';
+        aVal = woMap.get(String(a.work_order_number || '').trim())?.foreman || '';
+        bVal = woMap.get(String(b.work_order_number || '').trim())?.foreman || '';
       } else if (sortField === 'role_category') {
         aVal = getEntryRole(a);
         bVal = getEntryRole(b);
@@ -136,6 +174,9 @@ export const TimesheetTab: React.FC = () => {
       } else if (sortField === 'ot_cost') {
         aVal = getEntryOtCost(a);
         bVal = getEntryOtCost(b);
+      } else if (sortField === 'line_labor_cost') {
+        aVal = getEntryLaborCost(a);
+        bVal = getEntryLaborCost(b);
       }
 
       if (aVal === undefined || aVal === null) aVal = '';
@@ -147,7 +188,7 @@ export const TimesheetTab: React.FC = () => {
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredEntries, sortField, sortOrder, woMap, laborRateCategories]);
+  }, [filteredEntries, sortField, sortOrder, woMap, laborRateCategories, gfNamesSet, foremanNamesSet]);
 
   // Paginated entries calculation
   const totalPages = Math.max(1, Math.ceil(sortedEntries.length / pageSize));
@@ -160,12 +201,12 @@ export const TimesheetTab: React.FC = () => {
 
   // Overall KPIs (derived from filtered entries for dashboard consistency)
   const totalHours = useMemo(() => filteredEntries.reduce((sum, e) => sum + e.shift_hours, 0), [filteredEntries]);
-  const totalLaborCost = useMemo(() => filteredEntries.reduce((sum, e) => sum + e.line_labor_cost, 0), [filteredEntries]);
-  const uniqueHeadcount = useMemo(() => new Set(filteredEntries.map((e) => e.employee_name)).size, [filteredEntries]);
+  const totalLaborCost = useMemo(() => filteredEntries.reduce((sum, e) => sum + getEntryLaborCost(e), 0), [filteredEntries]);
+  const uniqueHeadcount = useMemo(() => new Set(filteredEntries.map((e) => e.employee_name.trim())).size, [filteredEntries]);
 
   // Base total hours for percentage calculation across all roles
   const baseTotalHours = useMemo(() => baseFilteredEntries.reduce((sum, e) => sum + e.shift_hours, 0), [baseFilteredEntries]);
-  const baseTotalHeadcount = useMemo(() => new Set(baseFilteredEntries.map((e) => e.employee_name)).size, [baseFilteredEntries]);
+  const baseTotalHeadcount = useMemo(() => new Set(baseFilteredEntries.map((e) => e.employee_name.trim())).size, [baseFilteredEntries]);
 
   // Role Breakdown with distinct employee headcount tracking
   const roleBreakdown = useMemo(() => {
@@ -185,19 +226,19 @@ export const TimesheetTab: React.FC = () => {
       }
       map[cat].count += 1;
       map[cat].hours += entry.shift_hours;
-      map[cat].cost += entry.line_labor_cost;
+      map[cat].cost += getEntryLaborCost(entry);
       if (entry.employee_name) {
         map[cat].employees.add(entry.employee_name.trim());
       }
     });
 
     return map;
-  }, [baseFilteredEntries, laborRateCategories, woMap]);
+  }, [baseFilteredEntries, laborRateCategories, woMap, gfNamesSet, foremanNamesSet]);
 
   // Unclassified Rates Summary
   const unclassifiedEntries = useMemo(
     () => baseFilteredEntries.filter((e) => getEntryRole(e) === 'unclassified'),
-    [baseFilteredEntries, laborRateCategories, woMap]
+    [baseFilteredEntries, laborRateCategories, woMap, gfNamesSet, foremanNamesSet]
   );
   const unclassifiedCount = unclassifiedEntries.length;
   const unclassifiedHours = unclassifiedEntries.reduce((sum, e) => sum + e.shift_hours, 0);
@@ -210,7 +251,7 @@ export const TimesheetTab: React.FC = () => {
       }
       dist[e.hourly_rate].count += 1;
       dist[e.hourly_rate].hours += e.shift_hours;
-      dist[e.hourly_rate].cost += e.line_labor_cost;
+      dist[e.hourly_rate].cost += getEntryLaborCost(e);
       if (e.employee_name) {
         dist[e.hourly_rate].employees.add(e.employee_name.trim());
       }
@@ -224,11 +265,11 @@ export const TimesheetTab: React.FC = () => {
   // Rollup details for selected work order
   const activeWorkOrderRollup = useMemo(() => {
     if (!selectedWorkOrderForRollup) return null;
-    const wo = workOrders.find((w) => w.work_order_number === selectedWorkOrderForRollup);
-    const woInvoices = invoices.filter((i) => i.work_order_number === selectedWorkOrderForRollup);
-    const woEntries = laborEntries.filter((e) => e.work_order_number === selectedWorkOrderForRollup);
+    const wo = workOrders.find((w) => String(w.work_order_number).trim() === String(selectedWorkOrderForRollup).trim());
+    const woInvoices = invoices.filter((i) => String(i.work_order_number).trim() === String(selectedWorkOrderForRollup).trim());
+    const woEntries = laborEntries.filter((e) => String(e.work_order_number).trim() === String(selectedWorkOrderForRollup).trim());
     const woHours = woEntries.reduce((sum, e) => sum + e.shift_hours, 0);
-    const woCost = woEntries.reduce((sum, e) => sum + e.line_labor_cost, 0);
+    const woCost = woEntries.reduce((sum, e) => sum + getEntryLaborCost(e), 0);
 
     const invoiceTotal = woInvoices.reduce((sum, i) => sum + (i.total || 0), 0);
     const grossMargin = invoiceTotal - woCost;
@@ -280,108 +321,154 @@ export const TimesheetTab: React.FC = () => {
   const getRoleCategoryBadge = (role: string) => {
     switch (role) {
       case 'GForeman':
-        return 'bg-purple-950/80 text-purple-300 border-purple-800/60';
+        return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'Foreman':
-        return 'bg-blue-950/80 text-blue-300 border-blue-800/60';
+        return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'Journeyman':
-        return 'bg-indigo-950/80 text-indigo-300 border-indigo-800/60';
+        return 'bg-indigo-50 text-indigo-700 border-indigo-200';
       case 'Apprentice':
-        return 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60';
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'Groundman':
-        return 'bg-amber-950/80 text-amber-300 border-amber-800/60';
+        return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'unclassified':
       default:
-        return 'bg-red-950/80 text-red-300 border-red-800/60 font-semibold';
+        return 'bg-red-50 text-red-700 border-red-200 font-semibold';
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Header & Overview */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
-              <Clock className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Connecteam Labor & Timesheets</h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Role classification with standard rates and crew assignments. Connecteam shift hourly rate is the source of truth for total costs.
-              </p>
-            </div>
+    <div className="flex flex-col gap-6 select-none font-sans">
+      {/* Top Header Card */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-600">
+            <Clock className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900 tracking-tight my-0">Connecteam Labor & Timesheets</h2>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Role classification with standard rates and crew assignments. Labor Cost is calculated as Regular Cost + OT Cost (1.5x).
+            </p>
           </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl relative overflow-hidden">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>TOTAL HOURS</span>
-            <Clock className="w-4 h-4 text-blue-400" />
+      {/* KPI Cards Row (Matched to Dashboard KPIs theme) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Total Hours */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold tracking-wider text-slate-400 uppercase">Total Hours</p>
+            <Clock className="w-4 h-4 text-blue-500" />
           </div>
-          <div className="text-2xl font-bold text-white font-mono">{formatHours(totalHours)}</div>
-          <p className="text-[11px] text-slate-500 mt-1">{laborEntries.length} recorded shift entries</p>
-        </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 my-2 font-mono">{formatHours(totalHours)}</h1>
+          <p className="text-xs text-slate-500 font-medium">
+            <span className="font-semibold text-slate-700">{laborEntries.length}</span> recorded shift entries
+          </p>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4 overflow-hidden">
+            <div className="bg-blue-600 h-full rounded-full" style={{ width: '100%' }} />
+          </div>
+        </motion.div>
 
-        <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl relative overflow-hidden">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>TOTAL LABOR COST</span>
-            <DollarSign className="w-4 h-4 text-emerald-400" />
+        {/* Total Labor Cost */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold tracking-wider text-slate-400 uppercase">Total Labor Cost</p>
+            <DollarSign className="w-4 h-4 text-emerald-500" />
           </div>
-          <div className="text-2xl font-bold text-emerald-400 font-mono">
-            {isEmployee ? '*** Hidden ***' : formatCurrency(totalLaborCost)}
+          <h1 className="text-3xl font-extrabold text-slate-900 my-2 font-mono text-emerald-600">
+            {isEmployee ? '***' : formatCurrency(totalLaborCost)}
+          </h1>
+          <p className="text-xs text-slate-500 font-medium">
+            Regular Cost + <span className="font-semibold text-amber-600">OT (1.5x)</span> applied
+          </p>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4 overflow-hidden">
+            <div className="bg-emerald-600 h-full rounded-full" style={{ width: '100%' }} />
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Based on exact shift hourly rates</p>
-        </div>
+        </motion.div>
 
-        <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl relative overflow-hidden">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>ACTIVE WORKFORCE</span>
-            <Users className="w-4 h-4 text-indigo-400" />
+        {/* Active Workforce */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold tracking-wider text-slate-400 uppercase">Active Workforce</p>
+            <Users className="w-4 h-4 text-indigo-500" />
           </div>
-          <div className="text-2xl font-bold text-indigo-400 font-mono">{uniqueHeadcount} Crew</div>
-          <p className="text-[11px] text-slate-500 mt-1">Distinct employees logged</p>
-        </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 my-2 font-mono text-indigo-600">
+            {uniqueHeadcount} <span className="text-sm font-semibold text-slate-500 font-sans">Workers</span>
+          </h1>
+          <p className="text-xs text-slate-500 font-medium">
+            <span className="font-semibold text-slate-700">{uniqueHeadcount}</span> distinct employees logged
+          </p>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4 overflow-hidden">
+            <div className="bg-indigo-600 h-full rounded-full" style={{ width: '100%' }} />
+          </div>
+        </motion.div>
 
-        <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl relative overflow-hidden">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-2">
-            <span>UNCLASSIFIED ENTRIES</span>
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
+        {/* Unclassified Entries */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold tracking-wider text-slate-400 uppercase">Unclassified Entries</p>
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="text-2xl font-bold text-amber-400 font-mono">
+          <h1 className="text-3xl font-extrabold text-slate-900 my-2 font-mono text-amber-600">
             {unclassifiedCount}{' '}
-            <span className="text-xs text-slate-400 font-normal">
+            <span className="text-xs text-slate-400 font-sans font-normal">
               ({laborEntries.length > 0 ? ((unclassifiedCount / laborEntries.length) * 100).toFixed(0) : 0}%)
             </span>
+          </h1>
+          <p className="text-xs text-slate-500 font-medium">
+            <span className="font-semibold text-amber-600">{formatHours(unclassifiedHours)}</span> custom/variable rate
+          </p>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4 overflow-hidden">
+            <div
+              className="bg-amber-500 h-full rounded-full transition-all duration-500"
+              style={{ width: `${laborEntries.length > 0 ? Math.min(100, (unclassifiedCount / laborEntries.length) * 100) : 0}%` }}
+            />
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">{formatHours(unclassifiedHours)} need rate alignment</p>
-        </div>
+        </motion.div>
       </div>
 
-      {/* SHIFT LOG TABLE (MOVED TO TOP) WITH SEARCH, FILTERS & PAGINATION */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+      {/* SHIFT LOG TABLE CARD */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 select-none overflow-x-auto font-sans">
         {/* Table Controls */}
-        <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 mb-6">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by employee, work order #..."
+              placeholder="Search by employee, work order #, general foreman..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-400 font-medium">Role:</label>
+              <label className="text-xs text-slate-500 font-semibold">Role Filter:</label>
               <select
                 value={selectedRoleFilter}
                 onChange={(e) => setSelectedRoleFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-700/80 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:bg-white focus:border-blue-500 cursor-pointer font-medium"
               >
                 <option value="all">All Roles & Categories</option>
                 <option value="GForeman">General Foreman ($55.70)</option>
@@ -393,12 +480,12 @@ export const TimesheetTab: React.FC = () => {
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-400 font-medium">Rows:</label>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <label className="text-[11px] font-semibold text-slate-400">Rows:</label>
               <select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="bg-slate-950 border border-slate-700/80 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:bg-white focus:border-blue-500"
               >
                 <option value={10}>10</option>
                 <option value={25}>25</option>
@@ -411,18 +498,18 @@ export const TimesheetTab: React.FC = () => {
 
         {/* Active Role Filter Banner */}
         {selectedRoleFilter !== 'all' && (
-          <div className="px-5 py-2.5 bg-blue-950/40 border-b border-blue-900/50 flex items-center justify-between gap-4 text-xs text-blue-200">
+          <div className="mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between gap-4 text-xs text-blue-800">
             <div className="flex items-center gap-2">
-              <Filter className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+              <Filter className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
               <span>
                 Filtered by role:{' '}
-                <strong className="text-white font-semibold">{getRoleDisplayName(selectedRoleFilter)}</strong>{' '}
+                <strong className="text-blue-950 font-bold">{getRoleDisplayName(selectedRoleFilter)}</strong>{' '}
                 ({filteredEntries.length} shift entries · {uniqueHeadcount} {uniqueHeadcount === 1 ? 'worker' : 'workers'})
               </span>
             </div>
             <button
               onClick={() => setSelectedRoleFilter('all')}
-              className="flex items-center gap-1 text-[11px] font-semibold text-blue-400 hover:text-white bg-blue-900/40 hover:bg-blue-900/70 border border-blue-700/50 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+              className="flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-100 border border-blue-300 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
             >
               <X className="w-3 h-3" /> Clear Role Filter
             </button>
@@ -430,194 +517,192 @@ export const TimesheetTab: React.FC = () => {
         )}
 
         {/* Shift Entries Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider text-slate-400 font-semibold border-b border-slate-800">
-              <tr>
-                <th
-                  className="px-4 py-3.5 cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('shift_date')}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Shift Date</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('employee_name')}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Employee</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('work_order_number')}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Work Order</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('general_foreman')}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>General Foreman</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('foreman')}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Foreman</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('role_category')}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Role Category</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 text-right cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('shift_hours')}
-                >
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span>Hours</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 text-right cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('hourly_rate')}
-                >
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span>Hourly Rate</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 text-right cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('ot_hours')}
-                >
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span>OT Hours</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 text-right cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('ot_cost')}
-                >
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span>OT Cost</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3.5 text-right cursor-pointer hover:text-white transition-colors"
-                  onClick={() => handleSort('line_labor_cost')}
-                >
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span>Labor Cost</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th className="px-4 py-3.5 text-center">WO Rollup</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {paginatedEntries.map((entry) => {
-                const wo = woMap.get(entry.work_order_number);
-                return (
-                  <tr key={entry.id || (entry.work_order_number + '-' + entry.shift_date + '-' + entry.employee_name)} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="px-4 py-3 font-mono text-slate-400 whitespace-nowrap">{entry.shift_date}</td>
-                    <td className="px-4 py-3 font-medium text-white whitespace-nowrap">{entry.employee_name}</td>
-                    <td className="px-4 py-3 font-mono font-medium text-blue-400 whitespace-nowrap">
-                      {entry.work_order_number || <span className="text-slate-500 italic">Unassigned</span>}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
-                      {wo?.general_foreman || <span className="text-slate-500 italic">-</span>}
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">
-                      {wo?.foreman || <span className="text-slate-500 italic">-</span>}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {(() => {
-                        const role = getEntryRole(entry);
-                        return (
-                          <button
-                            onClick={() => setSelectedRoleFilter(selectedRoleFilter.toLowerCase() === role.toLowerCase() ? 'all' : role)}
-                            className={'px-2 py-0.5 rounded text-[10px] uppercase font-bold border transition-all hover:scale-105 cursor-pointer ' + getRoleCategoryBadge(role)}
-                            title={`Filter by ${getRoleDisplayName(role)}`}
-                          >
-                            {role}
-                          </button>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono font-medium text-slate-200">
-                      {formatHours(entry.shift_hours)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400">
-                      {isEmployee ? '***' : formatCurrency(entry.hourly_rate)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-amber-400 font-medium">
-                      {formatHours(getEntryOtHours(entry))}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-amber-300 font-medium">
-                      {isEmployee ? '***' : formatCurrency(getEntryOtCost(entry))}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-400">
-                      {isEmployee ? '***' : formatCurrency(entry.line_labor_cost)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {entry.work_order_number ? (
+        <table className="w-full border-collapse text-left text-xs text-slate-600 min-w-[900px]">
+          <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+            <tr>
+              <th
+                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('shift_date')}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Shift Date</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('employee_name')}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Employee</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('work_order_number')}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Work Order</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('general_foreman')}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>General Foreman</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('foreman')}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Foreman</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('role_category')}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>Role Category</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('shift_hours')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>Hours</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('hourly_rate')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>Hourly Rate</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('ot_hours')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>OT Hours</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('ot_cost')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>OT Cost</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('line_labor_cost')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>Labor Cost</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th className="py-3 px-4 text-center">WO Rollup</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {paginatedEntries.map((entry) => {
+              const wo = woMap.get(String(entry.work_order_number || '').trim());
+              return (
+                <tr key={entry.id || (entry.work_order_number + '-' + entry.shift_date + '-' + entry.employee_name)} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">{entry.shift_date}</td>
+                  <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">{entry.employee_name}</td>
+                  <td className="py-3 px-4 font-mono font-semibold text-blue-600 whitespace-nowrap">
+                    {entry.work_order_number ? `#${entry.work_order_number}` : <span className="text-slate-400 italic">Unassigned</span>}
+                  </td>
+                  <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
+                    {wo?.general_foreman || <span className="text-slate-400 italic">-</span>}
+                  </td>
+                  <td className="py-3 px-4 text-slate-700 whitespace-nowrap">
+                    {wo?.foreman || <span className="text-slate-400 italic">-</span>}
+                  </td>
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    {(() => {
+                      const role = getEntryRole(entry);
+                      return (
                         <button
-                          onClick={() => setSelectedWorkOrderForRollup(entry.work_order_number)}
-                          className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                          title="View Work Order Labor Rollup"
+                          onClick={() => setSelectedRoleFilter(selectedRoleFilter.toLowerCase() === role.toLowerCase() ? 'all' : role)}
+                          className={'px-2 py-0.5 rounded text-[10px] uppercase font-bold border transition-all hover:scale-105 cursor-pointer ' + getRoleCategoryBadge(role)}
+                          title={`Filter by ${getRoleDisplayName(role)}`}
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          {role}
                         </button>
-                      ) : (
-                        <span className="text-slate-600">-</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {paginatedEntries.length === 0 && (
-                <tr>
-                  <td colSpan={12} className="px-5 py-8 text-center text-slate-500">
-                    No timesheet entries matched your search criteria.
+                      );
+                    })()}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono font-medium text-slate-700">
+                    {formatHours(entry.shift_hours)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-500">
+                    {isEmployee ? '***' : formatCurrency(entry.hourly_rate)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-amber-600 font-semibold">
+                    {formatHours(getEntryOtHours(entry))}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-amber-700 font-semibold">
+                    {isEmployee ? '***' : formatCurrency(getEntryOtCost(entry))}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600">
+                    {isEmployee ? '***' : formatCurrency(getEntryLaborCost(entry))}
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    {entry.work_order_number ? (
+                      <button
+                        onClick={() => setSelectedWorkOrderForRollup(entry.work_order_number)}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                        title="View Work Order Labor Rollup"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
                   </td>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              );
+            })}
+            {paginatedEntries.length === 0 && (
+              <tr>
+                <td colSpan={12} className="py-8 px-4 text-center text-slate-400">
+                  No timesheet entries matched your search criteria.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
 
         {/* Pagination Bar */}
-        <div className="px-5 py-3.5 bg-slate-950/80 border-t border-slate-800 text-xs text-slate-400 flex flex-col sm:flex-row justify-between items-center gap-3">
+        <div className="px-4 py-3.5 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-3 mt-2 rounded-b-xl">
           <div className="font-medium">
             {sortedEntries.length === 0 ? (
               <span>0 entries</span>
             ) : (
               <span>
-                Showing <strong className="text-white">{startIndex + 1}</strong> to{' '}
-                <strong className="text-white">{endIndex}</strong> of{' '}
-                <strong className="text-white">{sortedEntries.length}</strong> entries
+                Showing <strong className="text-slate-800">{startIndex + 1}</strong> to{' '}
+                <strong className="text-slate-800">{endIndex}</strong> of{' '}
+                <strong className="text-slate-800">{sortedEntries.length}</strong> entries
               </span>
             )}
           </div>
@@ -627,7 +712,7 @@ export const TimesheetTab: React.FC = () => {
             <button
               onClick={() => setCurrentPage(1)}
               disabled={safeCurrentPage <= 1}
-              className="p-1.5 rounded-lg bg-slate-900 border border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               title="First Page"
             >
               <ChevronsLeft className="w-4 h-4" />
@@ -635,20 +720,20 @@ export const TimesheetTab: React.FC = () => {
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={safeCurrentPage <= 1}
-              className="p-1.5 rounded-lg bg-slate-900 border border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               title="Previous Page"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            <span className="px-3 py-1 font-mono text-xs text-slate-300 bg-slate-900 border border-slate-800 rounded-lg">
-              Page <strong className="text-blue-400">{safeCurrentPage}</strong> of {totalPages}
+            <span className="px-3 py-1 font-mono text-xs text-slate-700 bg-white border border-slate-200 rounded-lg">
+              Page <strong className="text-blue-600">{safeCurrentPage}</strong> of {totalPages}
             </span>
 
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={safeCurrentPage >= totalPages}
-              className="p-1.5 rounded-lg bg-slate-900 border border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               title="Next Page"
             >
               <ChevronRight className="w-4 h-4" />
@@ -656,7 +741,7 @@ export const TimesheetTab: React.FC = () => {
             <button
               onClick={() => setCurrentPage(totalPages)}
               disabled={safeCurrentPage >= totalPages}
-              className="p-1.5 rounded-lg bg-slate-900 border border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               title="Last Page"
             >
               <ChevronsRight className="w-4 h-4" />
@@ -668,25 +753,25 @@ export const TimesheetTab: React.FC = () => {
       {/* Role Breakdown Bar & Unclassified Alert Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Role Distribution Card */}
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6">
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
             <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Layers className="w-4 h-4 text-blue-400" />
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 my-0">
+                <Layers className="w-4 h-4 text-blue-600" />
                 Role Category Breakdown & Headcount
               </h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">
+              <p className="text-[11px] text-slate-500 mt-0.5">
                 Click any role category to filter the shift log and metrics.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 font-mono bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800">
+              <span className="text-xs text-slate-600 font-mono bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
                 {baseTotalHeadcount} Total Active Workers
               </span>
               {selectedRoleFilter !== 'all' && (
                 <button
                   onClick={() => setSelectedRoleFilter('all')}
-                  className="text-xs px-2.5 py-1 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 border border-blue-500/40 rounded-lg flex items-center gap-1 transition-colors cursor-pointer font-medium"
+                  className="text-xs px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1 transition-colors cursor-pointer font-medium"
                 >
                   <X className="w-3.5 h-3.5" /> Show All
                 </button>
@@ -707,10 +792,10 @@ export const TimesheetTab: React.FC = () => {
                 <div
                   key={category}
                   onClick={() => setSelectedRoleFilter(isSelected ? 'all' : category)}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer group ${
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer group ${
                     isSelected
-                      ? 'bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/50 shadow-lg shadow-blue-950/50'
-                      : 'bg-slate-950/60 border-slate-800/90 hover:bg-slate-800/50 hover:border-slate-700'
+                      ? 'bg-blue-50/70 border-blue-400 ring-2 ring-blue-400/30 shadow-sm'
+                      : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70 hover:border-slate-300'
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs mb-2">
@@ -719,12 +804,12 @@ export const TimesheetTab: React.FC = () => {
                       <span className={'px-2 py-0.5 rounded text-[10px] uppercase font-bold border ' + getRoleCategoryBadge(category)}>
                         {category}
                       </span>
-                      <span className="text-white font-medium text-xs">{getRoleDisplayName(category)}</span>
+                      <span className="text-slate-800 font-semibold text-xs">{getRoleDisplayName(category)}</span>
                       <span className="text-slate-400 text-[11px]">({standardRate})</span>
 
-                      {/* Explicit Headcount Pill */}
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/10 text-blue-300 border border-blue-500/20">
-                        <Users className="w-3 h-3 text-blue-400" />
+                      {/* Headcount Pill */}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        <Users className="w-3 h-3 text-blue-600" />
                         <span>
                           {headcount} {headcount === 1 ? 'Worker' : 'Workers'}
                           {baseTotalHeadcount > 0 ? ` (${pctOfHeadcount.toFixed(0)}%)` : ''}
@@ -732,7 +817,7 @@ export const TimesheetTab: React.FC = () => {
                       </span>
 
                       {isSelected && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           Active Filter
                         </span>
                       )}
@@ -740,11 +825,11 @@ export const TimesheetTab: React.FC = () => {
 
                     {/* Right: Shifts, Total Hours, Labor Cost & Share % */}
                     <div className="flex items-center gap-2.5 font-mono text-[11px] text-right">
-                      <span className="text-slate-400">{stats.count} {stats.count === 1 ? 'shift' : 'shifts'}</span>
-                      <span className="text-slate-600">·</span>
-                      <span className="text-slate-200 font-medium">{formatHours(stats.hours)}</span>
-                      <span className="text-slate-600">·</span>
-                      <span className="text-emerald-400 font-semibold">
+                      <span className="text-slate-500">{stats.count} {stats.count === 1 ? 'shift' : 'shifts'}</span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-slate-700 font-semibold">{formatHours(stats.hours)}</span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-emerald-600 font-bold">
                         {isEmployee ? '***' : formatCurrency(stats.cost)}
                       </span>
                       <span className="text-slate-400 w-12 text-right">({pctOfHours.toFixed(1)}%)</span>
@@ -752,19 +837,19 @@ export const TimesheetTab: React.FC = () => {
                   </div>
 
                   {/* Progress Bar */}
-                  <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden flex">
+                  <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden flex">
                     <div
                       className={'h-full rounded-full transition-all duration-500 ' + (
                         category === 'unclassified'
                           ? 'bg-red-500'
                           : category === 'GForeman'
-                          ? 'bg-purple-500'
+                          ? 'bg-purple-600'
                           : category === 'Foreman'
-                          ? 'bg-blue-500'
+                          ? 'bg-blue-600'
                           : category === 'Journeyman'
-                          ? 'bg-indigo-500'
+                          ? 'bg-indigo-600'
                           : category === 'Apprentice'
-                          ? 'bg-emerald-500'
+                          ? 'bg-emerald-600'
                           : 'bg-amber-500'
                       )}
                       style={{ width: `${Math.max(pctOfHours, 1)}%` }}
@@ -777,31 +862,31 @@ export const TimesheetTab: React.FC = () => {
         </div>
 
         {/* Unclassified Rates Panel */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-                <AlertTriangle className="w-4 h-4" />
+              <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
                 <span>Unclassified Rate Exception Panel</span>
               </div>
               {selectedRoleFilter === 'unclassified' ? (
                 <button
                   onClick={() => setSelectedRoleFilter('all')}
-                  className="text-[10px] font-semibold text-amber-300 hover:text-white bg-amber-950/60 border border-amber-800/80 px-2 py-0.5 rounded cursor-pointer"
+                  className="text-[10px] font-semibold text-amber-800 hover:text-amber-950 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
                 >
                   Clear Filter
                 </button>
               ) : (
                 <button
                   onClick={() => setSelectedRoleFilter('unclassified')}
-                  className="text-[10px] font-semibold text-amber-400 hover:text-amber-200 hover:underline cursor-pointer"
+                  className="text-[10px] font-semibold text-amber-600 hover:text-amber-800 hover:underline cursor-pointer"
                 >
                   Filter Unclassified
                 </button>
               )}
             </div>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              These rates do not match standard categories or crew assignments. Their actual Connecteam rate is preserved in all calculations.
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              These rates do not match standard categories or crew leadership assignments. Actual Connecteam shift rates are preserved in all calculations.
             </p>
 
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
@@ -809,34 +894,34 @@ export const TimesheetTab: React.FC = () => {
                 <div
                   key={item.rate}
                   onClick={() => setSelectedRoleFilter('unclassified')}
-                  className="flex items-center justify-between p-2.5 bg-slate-950/60 border border-slate-800 hover:border-slate-700 rounded-xl text-xs cursor-pointer transition-colors"
+                  className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-xs cursor-pointer transition-colors"
                   title="Click to filter by unclassified entries"
                 >
                   <div>
-                    <span className="font-bold text-white font-mono">{formatCurrency(item.rate)}/hr</span>
-                    <div className="text-slate-400 text-[10px] flex items-center gap-1.5 mt-0.5">
+                    <span className="font-bold text-slate-900 font-mono">{formatCurrency(item.rate)}/hr</span>
+                    <div className="text-slate-500 text-[10px] flex items-center gap-1.5 mt-0.5">
                       <span>{item.employees.size} {item.employees.size === 1 ? 'worker' : 'workers'}</span>
                       <span>·</span>
                       <span>{item.count} {item.count === 1 ? 'shift' : 'shifts'}</span>
                     </div>
                   </div>
                   <div className="text-right font-mono">
-                    <div className="text-slate-300">{formatHours(item.hours)}</div>
+                    <div className="text-slate-700 font-medium">{formatHours(item.hours)}</div>
                     <div className="text-slate-500 text-[10px]">{isEmployee ? '***' : formatCurrency(item.cost)}</div>
                   </div>
                 </div>
               ))}
               {unclassifiedRateDistribution.length === 0 && (
-                <div className="p-4 text-center text-xs text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 rounded-xl flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
+                <div className="p-4 text-center text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   <span>All shifts matched standard rate categories</span>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-slate-800 text-[11px] text-slate-500">
-            Rule: Standard rate tolerance & crew assignments applied.
+          <div className="mt-4 pt-4 border-t border-slate-100 text-[11px] text-slate-400">
+            Standard tolerance & crew leadership hierarchy applied.
           </div>
         </div>
       </div>
@@ -844,53 +929,53 @@ export const TimesheetTab: React.FC = () => {
       {/* Per-Work-Order Labor Rollup Modal */}
       <AnimatePresence>
         {activeWorkOrderRollup && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl"
+              className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl"
             >
-              <div className="p-6 border-b border-slate-800 flex justify-between items-start">
+              <div className="p-6 border-b border-slate-200 flex justify-between items-start bg-slate-50/50">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-white font-mono">
+                    <h3 className="text-lg font-bold text-slate-900 font-mono my-0">
                       WO #{activeWorkOrderRollup.workOrderNumber}
                     </h3>
-                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-950 text-blue-300 border border-blue-800">
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-50 text-blue-700 border border-blue-200">
                       {activeWorkOrderRollup.status}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Crew Leader: {activeWorkOrderRollup.crewLeader} · Area: {activeWorkOrderRollup.area}
                   </p>
                 </div>
                 <button
                   onClick={() => setSelectedWorkOrderForRollup(null)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
 
               {/* Summary stats */}
-              <div className="p-6 grid grid-cols-3 gap-4 bg-slate-950/50 border-b border-slate-800 text-center">
-                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+              <div className="p-6 grid grid-cols-3 gap-4 bg-slate-50/50 border-b border-slate-200 text-center">
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
                   <span className="text-[10px] text-slate-400 block font-semibold">TOTAL LABOR HOURS</span>
-                  <span className="text-base font-bold text-white font-mono">
+                  <span className="text-base font-bold text-slate-900 font-mono">
                     {formatHours(activeWorkOrderRollup.laborHours)}
                   </span>
                 </div>
-                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
                   <span className="text-[10px] text-slate-400 block font-semibold">TOTAL LABOR COST</span>
-                  <span className="text-base font-bold text-emerald-400 font-mono">
+                  <span className="text-base font-bold text-emerald-600 font-mono">
                     {isEmployee ? '***' : formatCurrency(activeWorkOrderRollup.laborCost)}
                   </span>
                 </div>
-                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
                   <span className="text-[10px] text-slate-400 block font-semibold">EST. PROFIT MARGIN</span>
                   <span className={'text-base font-bold font-mono ' + (
-                    activeWorkOrderRollup.grossMargin >= 0 ? 'text-blue-400' : 'text-red-400'
+                    activeWorkOrderRollup.grossMargin >= 0 ? 'text-blue-600' : 'text-red-600'
                   )}>
                     {isEmployee ? '***' : (activeWorkOrderRollup.marginPct.toFixed(1) + '%')}
                   </span>
@@ -899,34 +984,34 @@ export const TimesheetTab: React.FC = () => {
 
               {/* Shifts list for this WO */}
               <div className="p-6 max-h-60 overflow-y-auto">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
                   Contributing Shift Entries ({activeWorkOrderRollup.entries.length})
                 </h4>
                 <div className="space-y-2">
                   {activeWorkOrderRollup.entries.map((e, idx) => (
                     <div
                       key={e.id || idx}
-                      className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs"
+                      className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                     >
                       <div>
-                        <span className="font-semibold text-white">{e.employee_name}</span>
-                        <span className="text-slate-500 text-[10px] block">
-                          {e.shift_date} · <span className={getRoleCategoryBadge(e.role_category)}>{e.role_category}</span>
+                        <span className="font-bold text-slate-800">{e.employee_name}</span>
+                        <span className="text-slate-500 text-[10px] block mt-0.5">
+                          {e.shift_date} · <span className={getRoleCategoryBadge(getEntryRole(e))}>{getEntryRole(e)}</span>
                         </span>
                       </div>
                       <div className="text-right font-mono">
-                        <div className="text-slate-200">{formatHours(e.shift_hours)} @ {formatCurrency(e.hourly_rate)}/hr</div>
-                        <div className="text-emerald-400 font-semibold">{formatCurrency(e.line_labor_cost)}</div>
+                        <div className="text-slate-700 font-medium">{formatHours(e.shift_hours)} @ {formatCurrency(e.hourly_rate)}/hr</div>
+                        <div className="text-emerald-600 font-bold">{formatCurrency(getEntryLaborCost(e))}</div>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end">
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
                 <button
                   onClick={() => setSelectedWorkOrderForRollup(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                 >
                   Close
                 </button>

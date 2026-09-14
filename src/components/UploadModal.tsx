@@ -45,12 +45,24 @@ const TIMESHEET_HEADER_MAP: Record<string, string> = {
   'Total hours': 'shift_hours_raw',
   'Total Hours': 'shift_hours_raw',
   'Total hours (inc. auto-deductions)': 'shift_hours_raw',
-  'Total cost': 'line_labor_cost',
-  'Total Cost': 'line_labor_cost',
+  'Regular hours': 'regular_hours_raw',
+  'Regular Hours': 'regular_hours_raw',
+  'Regular': 'regular_hours_raw',
+  'Regular cost': 'regular_cost_raw',
+  'Regular Cost': 'regular_cost_raw',
+  'Regular pay': 'regular_cost_raw',
+  'Regular Pay': 'regular_cost_raw',
+  'Total cost': 'line_labor_cost_raw',
+  'Total Cost': 'line_labor_cost_raw',
+  'Labor cost': 'line_labor_cost_raw',
+  'Labor Cost': 'line_labor_cost_raw',
   'Overtime hours': 'ot_hours_raw',
   'Overtime Hours': 'ot_hours_raw',
   'Overtime': 'ot_hours_raw',
   'overtime': 'ot_hours_raw',
+  'OT hours': 'ot_hours_raw',
+  'OT Hours': 'ot_hours_raw',
+  'OT': 'ot_hours_raw',
   'OT cost': 'ot_cost_raw',
   'OT Cost': 'ot_cost_raw',
   ot_cost: 'ot_cost_raw',
@@ -132,6 +144,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
 
       const validRows: any[] = [];
       const errors: { row: number; field: string; message: string }[] = [];
+      const allGfNames = new Set(workOrders.map((w: any) => w.general_foreman?.trim().toLowerCase()).filter(Boolean));
+      const allForemanNames = new Set(workOrders.map((w: any) => w.foreman?.trim().toLowerCase()).filter(Boolean));
 
       rawData.forEach((row, idx) => {
         const normalizedRow: Record<string, any> = {};
@@ -215,13 +229,21 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
             ? parseHoursToDecimal(normalizedRow['ot_hours_raw'])
             : (shiftHours > 8 ? parseFloat((shiftHours - 8).toFixed(2)) : 0);
 
+          const regularHours = normalizedRow['regular_hours_raw'] !== undefined
+            ? parseHoursToDecimal(normalizedRow['regular_hours_raw'])
+            : Math.max(0, parseFloat((shiftHours - otHours).toFixed(2)));
+
+          const regularCost = normalizedRow['regular_cost_raw'] !== undefined
+            ? parseFloat(normalizedRow['regular_cost_raw']) || 0
+            : parseFloat((regularHours * hourlyRate).toFixed(2));
+
           const otCost = normalizedRow['ot_cost_raw'] !== undefined
             ? parseFloat(normalizedRow['ot_cost_raw']) || 0
             : parseFloat((otHours * hourlyRate * 1.5).toFixed(2));
 
-          const lineCost = normalizedRow['line_labor_cost'] !== undefined
-            ? parseFloat(normalizedRow['line_labor_cost']) || 0
-            : parseFloat((shiftHours * hourlyRate).toFixed(2));
+          const lineCost = normalizedRow['line_labor_cost_raw'] !== undefined
+            ? parseFloat(normalizedRow['line_labor_cost_raw']) || 0
+            : parseFloat((regularCost + otCost).toFixed(2));
 
           const shiftDate = parseExcelDate(normalizedRow['shift_date']) || normalizedRow['shift_date'] || new Date().toISOString().split('T')[0];
 
@@ -241,7 +263,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
             hourlyRate,
             laborRateCategories && laborRateCategories.length > 0 ? laborRateCategories : DEFAULT_LABOR_RATE_CATEGORIES,
             fullName,
-            parentWo
+            parentWo,
+            allGfNames,
+            allForemanNames
           );
           normalizedRow['role_category'] = roleCat;
         }
