@@ -32,26 +32,36 @@ export const classifyLaborRole = (
   hourlyRate: number,
   categories: LaborRateCategory[] = DEFAULT_LABOR_RATE_CATEGORIES,
   employeeName?: string,
-  workOrder?: { general_foreman?: string; foreman?: string }
+  workOrder?: { general_foreman?: string; foreman?: string },
+  allGfNames?: Set<string>,
+  allForemanNames?: Set<string>
 ): string => {
-  // 1. Rate-based matching against configured rate categories with tolerance
+  const normEmp = employeeName ? employeeName.trim().toLowerCase() : '';
+
+  // 1. Crew leadership matching by Employee Name / Work Order assignments (Highest Priority)
+  if (normEmp) {
+    if (
+      (workOrder?.general_foreman && workOrder.general_foreman.trim().toLowerCase() === normEmp) ||
+      (allGfNames && allGfNames.has(normEmp))
+    ) {
+      return 'GForeman';
+    }
+
+    if (
+      (workOrder?.foreman && workOrder.foreman.trim().toLowerCase() === normEmp) ||
+      (allForemanNames && allForemanNames.has(normEmp))
+    ) {
+      return 'Foreman';
+    }
+  }
+
+  // 2. Rate-based matching against configured rate categories with tolerance
   if (typeof hourlyRate === 'number' && !isNaN(hourlyRate) && hourlyRate > 0) {
     for (const cat of categories) {
       const tolerance = cat.match_tolerance !== undefined ? cat.match_tolerance : 0.20;
       if (Math.abs(hourlyRate - cat.standard_rate) <= tolerance) {
         return cat.category_name;
       }
-    }
-  }
-
-  // 2. Intelligent crew matching against parent Work Order assignments
-  if (employeeName && workOrder) {
-    const normEmp = employeeName.trim().toLowerCase();
-    if (workOrder.general_foreman && workOrder.general_foreman.trim().toLowerCase() === normEmp) {
-      return 'GForeman';
-    }
-    if (workOrder.foreman && workOrder.foreman.trim().toLowerCase() === normEmp) {
-      return 'Foreman';
     }
   }
 

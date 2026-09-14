@@ -307,6 +307,13 @@ export const uploadTimesheetThunk = createAsyncThunk(
       const otCost = e.ot_cost !== undefined && e.ot_cost !== null && !isNaN(Number(e.ot_cost)) && Number(e.ot_cost) > 0
         ? Number(e.ot_cost)
         : parseFloat((otHours * e.hourly_rate * 1.5).toFixed(2));
+      const regularHours = Math.max(0, parseFloat((e.shift_hours - otHours).toFixed(2)));
+      const regularCost = parseFloat((regularHours * e.hourly_rate).toFixed(2));
+      const calculatedLaborCost = parseFloat((regularCost + otCost).toFixed(2));
+
+      const lineLaborCost = (e.line_labor_cost !== undefined && e.line_labor_cost !== null && !isNaN(Number(e.line_labor_cost)) && Number(e.line_labor_cost) > 0)
+        ? Number(e.line_labor_cost)
+        : calculatedLaborCost;
 
       const entryId = isValidUUID(e.id) ? e.id! : generateUUID();
 
@@ -321,7 +328,7 @@ export const uploadTimesheetThunk = createAsyncThunk(
         hourly_rate: e.hourly_rate,
         ot_hours: otHours,
         ot_cost: otCost,
-        line_labor_cost: e.line_labor_cost,
+        line_labor_cost: lineLaborCost,
         role_category: e.role_category,
       };
     });
