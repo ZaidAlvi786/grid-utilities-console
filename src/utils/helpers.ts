@@ -2,11 +2,13 @@ import { WorkOrder, Invoice, LaborRateCategory } from '../types/schemas';
 
 // Default standard labor rate categories provided by client
 export const DEFAULT_LABOR_RATE_CATEGORIES: LaborRateCategory[] = [
-  { category_name: 'GForeman', standard_rate: 55.70, match_tolerance: 0.20 },
-  { category_name: 'Foreman', standard_rate: 54.70, match_tolerance: 0.20 }, // absorbs 54.57 (diff is 0.13)
-  { category_name: 'Journeyman', standard_rate: 51.16, match_tolerance: 0.20 },
-  { category_name: 'Apprentice', standard_rate: 38.37, match_tolerance: 0.20 }, // absorbs 38.31
-  { category_name: 'Groundman', standard_rate: 25.66, match_tolerance: 0.20 },
+  { category_name: 'General Foreman', standard_rate: 58.49, ot_rate: 87.74, dt_rate: 116.98, benefits_rate: 25.22, match_tolerance: 0.20 },
+  { category_name: 'Foreman', standard_rate: 57.30, ot_rate: 85.95, dt_rate: 114.60, benefits_rate: 24.90, match_tolerance: 0.20 },
+  { category_name: 'Journeyman', standard_rate: 53.72, ot_rate: 80.58, dt_rate: 107.44, benefits_rate: 23.89, match_tolerance: 0.20 },
+  { category_name: 'Pole Truck Driver', standard_rate: 40.23, ot_rate: 60.35, dt_rate: 80.46, benefits_rate: 18.56, match_tolerance: 0.20 },
+  { category_name: 'Apprentice', standard_rate: 37.60, ot_rate: 56.40, dt_rate: 75.20, benefits_rate: 15.48, match_tolerance: 0.20 },
+  { category_name: 'Groundman', standard_rate: 26.94, ot_rate: 40.41, dt_rate: 53.88, benefits_rate: 14.66, match_tolerance: 0.20 },
+  { category_name: 'Pole Truck Helper', standard_rate: 15.00, ot_rate: 22.50, dt_rate: 30.00, benefits_rate: 9.48, match_tolerance: 0.20 },
 ];
 
 // Helper to format currency
@@ -27,6 +29,68 @@ export const formatHours = (val: number): string => {
   }) + ' hrs';
 };
 
+// Helper to get role rate information
+export const getLaborRoleRates = (
+  roleName: string,
+  categories: LaborRateCategory[] = DEFAULT_LABOR_RATE_CATEGORIES
+): LaborRateCategory | undefined => {
+  if (!roleName) return undefined;
+  const norm = roleName.trim().toLowerCase();
+  return categories.find((c) => {
+    const cNorm = c.category_name.trim().toLowerCase();
+    if (cNorm === norm) return true;
+    if ((norm === 'gforeman' || norm === 'general foreman') && (cNorm === 'general foreman' || cNorm === 'gforeman')) return true;
+    return false;
+  });
+};
+
+// Helper to get hourly benefits rate for a role
+export const getLaborRoleBenefitsRate = (
+  roleName: string,
+  categories: LaborRateCategory[] = DEFAULT_LABOR_RATE_CATEGORIES
+): number => {
+  const role = getLaborRoleRates(roleName, categories);
+  return role?.benefits_rate || 0;
+};
+
+// Calculate complete line labor cost for an entry (regular + OT + DT + Benefits)
+export const calculateLaborEntryCost = (
+  e: any,
+  categories: LaborRateCategory[] = DEFAULT_LABOR_RATE_CATEGORIES
+): number => {
+  if (e.line_labor_cost !== undefined && e.line_labor_cost !== null && !isNaN(Number(e.line_labor_cost)) && Number(e.line_labor_cost) > 0) {
+    return Number(e.line_labor_cost);
+  }
+  const shiftHours = Number(e.shift_hours) || 0;
+  const hourlyRate = Number(e.hourly_rate) || 0;
+  const otHours = e.ot_hours !== undefined && e.ot_hours !== null && !isNaN(Number(e.ot_hours))
+    ? Number(e.ot_hours)
+    : (shiftHours > 8 ? parseFloat((shiftHours - 8).toFixed(2)) : 0);
+  const dtHours = e.dt_hours !== undefined && e.dt_hours !== null && !isNaN(Number(e.dt_hours))
+    ? Number(e.dt_hours)
+    : 0;
+
+  const regularHours = Math.max(0, parseFloat((shiftHours - otHours - dtHours).toFixed(2)));
+  const regularCost = parseFloat((regularHours * hourlyRate).toFixed(2));
+  const otCost = e.ot_cost !== undefined && e.ot_cost !== null && !isNaN(Number(e.ot_cost)) && Number(e.ot_cost) > 0
+    ? Number(e.ot_cost)
+    : parseFloat((otHours * hourlyRate * 1.5).toFixed(2));
+  const dtCost = e.dt_cost !== undefined && e.dt_cost !== null && !isNaN(Number(e.dt_cost)) && Number(e.dt_cost) > 0
+    ? Number(e.dt_cost)
+    : parseFloat((dtHours * hourlyRate * 2.0).toFixed(2));
+
+  const roleCat = e.role_category || 'unclassified';
+  const benefitsRate = e.benefits_rate !== undefined && e.benefits_rate !== null && !isNaN(Number(e.benefits_rate)) && Number(e.benefits_rate) > 0
+    ? Number(e.benefits_rate)
+    : getLaborRoleBenefitsRate(roleCat, categories);
+
+  const benefitsCost = e.benefits_cost !== undefined && e.benefits_cost !== null && !isNaN(Number(e.benefits_cost)) && Number(e.benefits_cost) > 0
+    ? Number(e.benefits_cost)
+    : parseFloat((shiftHours * benefitsRate).toFixed(2));
+
+  return parseFloat((regularCost + otCost + dtCost + benefitsCost).toFixed(2));
+};
+
 // Helper to match an actual hourly rate or WO assignment to a role category
 export const classifyLaborRole = (
   hourlyRate: number,
@@ -44,7 +108,7 @@ export const classifyLaborRole = (
       (workOrder?.general_foreman && workOrder.general_foreman.trim().toLowerCase() === normEmp) ||
       (allGfNames && allGfNames.has(normEmp))
     ) {
-      return 'GForeman';
+      return 'General Foreman';
     }
 
     if (

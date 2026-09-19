@@ -2,14 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import { saveOverrideThunk } from '../store/dbSlice';
-import { getFilterFingerprint, getWorkOrderReportingDate } from '../utils/helpers';
-import { Pencil, CheckCircle, Clock } from 'lucide-react';
+import { getFilterFingerprint, getWorkOrderReportingDate, calculateLaborEntryCost, formatHours } from '../utils/helpers';
+import { Pencil, CheckCircle, Clock, DollarSign } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const Kpis: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const filters = useSelector((state: RootState) => state.filters);
-  const { workOrders, invoices, overrides, dailyExpenseRate } = useSelector((state: RootState) => state.db);
+  const { workOrders, invoices, laborEntries, laborRateCategories, overrides, dailyExpenseRate } = useSelector((state: RootState) => state.db);
   const { currentUser } = useSelector((state: RootState) => state.auth);
 
   const role = currentUser?.role || 'Supervisor';
@@ -74,10 +74,38 @@ export const Kpis: React.FC = () => {
   }, [filteredInvoices, filteredWO]);
 
   const baseExpense = foremanBookedDays * dailyExpenseRate;
-  const totalExpense = baseExpense + activeOverride.add_amount - activeOverride.remove_amount;
-  const computedMargin = invoicedAmount - totalExpense;
-  const profitMargin: number = (activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) ? activeOverride.profit_margin_override : computedMargin;
-  const profitMarginPct = invoicedAmount > 0 ? (profitMargin / invoicedAmount) * 100 : 0;
+
+  // Filtered Labor Entries mapped to dashboard filters
+  const filteredLabor = useMemo(() => {
+    const woMap = new Map<string, any>();
+    workOrders.forEach((w) => {
+      if (w.work_order_number) woMap.set(String(w.work_order_number).trim(), w);
+    });
+
+    return (laborEntries || []).filter((entry) => {
+      const wo = woMap.get(String(entry.work_order_number || '').trim());
+      const gf = wo?.general_foreman || 'Unassigned GF';
+      const f = wo?.foreman || 'Unassigned Foreman';
+      const area = wo?.area || '';
+
+      if (filters.generalForeman !== 'All crews' && gf !== filters.generalForeman) return false;
+      if (filters.foreman.length > 0 && !filters.foreman.includes(f)) return false;
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(entry.work_order_number)) return false;
+      if (filters.area !== 'All areas' && area !== filters.area) return false;
+      if (filters.startDate && entry.shift_date < filters.startDate) return false;
+      if (filters.endDate && entry.shift_date > filters.endDate) return false;
+      return true;
+    });
+  }, [laborEntries, workOrders, filters]);
+
+  // Base Labor Cost: complete sum of regular + OT + DT + Benefits across matching shifts
+  const baseLaborCost = useMemo(() => {
+    return filteredLabor.reduce((sum, e) => sum + calculateLaborEntryCost(e, laborRateCategories), 0);
+  }, [filteredLabor, laborRateCategories]);
+
+  const totalLaborHours = useMemo(() => {
+    return filteredLabor.reduce((sum, e) => sum + (e.shift_hours || 0), 0);
+  }, [filteredLabor]);
 
   const [addExpense, setAddExpense] = useState('');
   const [removeExpense, setRemoveExpense] = useState('');
@@ -91,12 +119,22 @@ export const Kpis: React.FC = () => {
     setMarginOverride((activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) ? activeOverride.profit_margin_override.toString() : '');
   }, [activeOverride]);
 
+  const currentAdd = addExpense !== '' && !isNaN(parseFloat(addExpense)) ? parseFloat(addExpense) : (activeOverride.add_amount || 0);
+  const currentRemove = removeExpense !== '' && !isNaN(parseFloat(removeExpense)) ? parseFloat(removeExpense) : (activeOverride.remove_amount || 0);
+
+  // Use actual labor cost if timesheets are present; otherwise fallback to standard daily expense rate
+  const effectiveBaseLabor = baseLaborCost > 0 ? baseLaborCost : baseExpense;
+  const totalLaborCost = effectiveBaseLabor + currentAdd - currentRemove;
+  const computedMargin = invoicedAmount - totalLaborCost;
+  const profitMargin: number = (activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) ? activeOverride.profit_margin_override : computedMargin;
+  const profitMarginPct = invoicedAmount > 0 ? (profitMargin / invoicedAmount) * 100 : 0;
+
   const handleSaveOverrides = async (updates: any) => {
     setSaveState('saving');
     const newOverride = {
       filter_fingerprint: fingerprint,
-      add_amount: updates.add_amount !== undefined ? updates.add_amount : activeOverride.add_amount,
-      remove_amount: updates.remove_amount !== undefined ? updates.remove_amount : activeOverride.remove_amount,
+      add_amount: updates.add_amount !== undefined ? updates.add_amount : (addExpense !== '' && !isNaN(parseFloat(addExpense)) ? parseFloat(addExpense) : activeOverride.add_amount),
+      remove_amount: updates.remove_amount !== undefined ? updates.remove_amount : (removeExpense !== '' && !isNaN(parseFloat(removeExpense)) ? parseFloat(removeExpense) : activeOverride.remove_amount),
       profit_margin_override: updates.profit_margin_override !== undefined ? updates.profit_margin_override : activeOverride.profit_margin_override,
     };
     try {
@@ -217,65 +255,82 @@ export const Kpis: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Total Expense */}
+      {/* Total Labor Cost (Replaces Total Expense) */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05 }}
         className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all"
       >
-        <p className="text-xs font-bold tracking-wider text-slate-400 uppercase">Total Expense</p>
-        <h1 className="text-3xl font-extrabold text-slate-900 my-2">{formatCurrency(totalExpense)}</h1>
-        <p className="text-[11px] text-slate-400 font-mono mt-1">
-          base {formatCurrency(baseExpense)} · {foremanBookedDays} foreman-days x $5,800
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold tracking-wider text-slate-400 uppercase">Total Labor Cost</p>
+          <DollarSign className="w-4 h-4 text-emerald-500" />
+        </div>
+        <h1 className="text-3xl font-extrabold text-slate-900 my-2">{formatCurrency(totalLaborCost)}</h1>
+        <p className="text-[11px] text-slate-500 font-medium mt-1">
+          {baseLaborCost > 0 ? (
+            <span>
+              base labor <strong className="text-slate-700 font-mono">{formatCurrency(baseLaborCost)}</strong> · {filteredLabor.length} {filteredLabor.length === 1 ? 'shift' : 'shifts'} ({formatHours(totalLaborHours)})
+            </span>
+          ) : (
+            <span>
+              base <strong className="text-slate-700 font-mono">{formatCurrency(baseExpense)}</strong> · {foremanBookedDays} foreman-days x $5,800
+            </span>
+          )}
         </p>
 
-        {isSupervisor && (
+        {!isEmployee && (
           <>
             <div className="grid grid-cols-2 gap-2 mt-3">
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase">Add Expense</label>
-                <input
-                  type="text"
-                  value={addExpense}
-                  placeholder="0"
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (/^\d*\.?\d*$/.test(val)) setAddExpense(val);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSaveOverrides({ add_amount: parseFloat(addExpense || '0') });
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  onBlur={() => handleSaveOverrides({ add_amount: parseFloat(addExpense || '0') })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:bg-white focus:border-blue-500"
-                />
+                <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Expense Add Amount</label>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 font-bold">+ $</span>
+                  <input
+                    type="text"
+                    value={addExpense}
+                    placeholder="0"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (/^\d*\.?\d*$/.test(val)) setAddExpense(val);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveOverrides({ add_amount: parseFloat(addExpense || '0') });
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    onBlur={() => handleSaveOverrides({ add_amount: parseFloat(addExpense || '0') })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-2 py-1 text-xs font-mono text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 transition-colors"
+                  />
+                </div>
               </div>
               <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase">Remove Expense</label>
-                <input
-                  type="text"
-                  value={removeExpense}
-                  placeholder="0"
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (/^\d*\.?\d*$/.test(val)) setRemoveExpense(val);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSaveOverrides({ remove_amount: parseFloat(removeExpense || '0') });
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  onBlur={() => handleSaveOverrides({ remove_amount: parseFloat(removeExpense || '0') })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:bg-white focus:border-blue-500"
-                />
+                <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Expense Less Amount</label>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 font-bold">- $</span>
+                  <input
+                    type="text"
+                    value={removeExpense}
+                    placeholder="0"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (/^\d*\.?\d*$/.test(val)) setRemoveExpense(val);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveOverrides({ remove_amount: parseFloat(removeExpense || '0') });
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    onBlur={() => handleSaveOverrides({ remove_amount: parseFloat(removeExpense || '0') })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-7 pr-2 py-1 text-xs font-mono text-slate-800 focus:outline-none focus:bg-white focus:border-blue-500 transition-colors"
+                  />
+                </div>
               </div>
             </div>
-            <div className="flex items-center justify-between mt-2 text-[9px] font-mono text-slate-400">
-              <span>{formatCurrency(baseExpense)} + ${activeOverride.add_amount || 0} - ${activeOverride.remove_amount || 0} = {formatCurrency(totalExpense)}</span>
+            <div className="flex items-center justify-between mt-2.5 text-[9px] font-mono text-slate-400">
+              <span>{formatCurrency(effectiveBaseLabor)} + ${currentAdd} - ${currentRemove} = {formatCurrency(totalLaborCost)}</span>
               {saveState === 'saving' ? (
                 <span className="text-blue-500 animate-pulse font-semibold">Saving to DB...</span>
               ) : saveState === 'saved' ? (
@@ -346,7 +401,7 @@ export const Kpis: React.FC = () => {
             />
           </div>
           <div className="text-[9px] font-mono text-slate-400 mt-4">
-            {formatCurrency(invoicedAmount)} - {formatCurrency(totalExpense)} = {formatCurrency(computedMargin)}
+            {formatCurrency(invoicedAmount)} - {formatCurrency(totalLaborCost)} = {formatCurrency(computedMargin)}
             {(activeOverride.profit_margin_override !== null && activeOverride.profit_margin_override !== undefined) && (
               <span className="text-amber-600 font-semibold"> (Overridden)</span>
             )}

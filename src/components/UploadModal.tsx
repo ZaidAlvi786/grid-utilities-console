@@ -15,7 +15,7 @@ import {
 } from '../store/dbSlice';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store/store';
-import { parseHoursToDecimal, parseExcelDate, classifyLaborRole, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
+import { parseHoursToDecimal, parseExcelDate, classifyLaborRole, getLaborRoleBenefitsRate, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
 import { X, UploadCloud, AlertCircle, FileText, CheckCircle, Clock, ArrowRight } from 'lucide-react';
 import {
   downloadWorkOrderTemplate,
@@ -32,8 +32,22 @@ const TIMESHEET_HEADER_MAP: Record<string, string> = {
   'Last name': 'employee_last_name',
   'User Name': 'employee_name',
   'Employee Name': 'employee_name',
-  Date: 'shift_date',
-  date: 'shift_date',
+  Date: 'shift_date_raw',
+  date: 'shift_date_raw',
+  'Start Date': 'start_date_raw',
+  'Start date': 'start_date_raw',
+  'start date': 'start_date_raw',
+  'Start': 'start_date_raw',
+  'start': 'start_date_raw',
+  'End Date': 'end_date_raw',
+  'End date': 'end_date_raw',
+  'end date': 'end_date_raw',
+  'End': 'end_date_raw',
+  'end': 'end_date_raw',
+  'Shift Date': 'shift_date_raw',
+  'Shift date': 'shift_date_raw',
+  'shift date': 'shift_date_raw',
+  shift_date: 'shift_date_raw',
   'Shift start': 'clock_in',
   'Shift Start': 'clock_in',
   'Shift end': 'clock_out',
@@ -70,6 +84,33 @@ const TIMESHEET_HEADER_MAP: Record<string, string> = {
   'Overtime Cost': 'ot_cost_raw',
   'Overtime pay': 'ot_cost_raw',
   'Overtime Pay': 'ot_cost_raw',
+  'Total double': 'dt_hours_raw',
+  'total double': 'dt_hours_raw',
+  'Total Double': 'dt_hours_raw',
+  'Double time': 'dt_hours_raw',
+  'Double Time': 'dt_hours_raw',
+  'double time': 'dt_hours_raw',
+  'DT hours': 'dt_hours_raw',
+  'DT Hours': 'dt_hours_raw',
+  'dt hours': 'dt_hours_raw',
+  'DT': 'dt_hours_raw',
+  'dt': 'dt_hours_raw',
+  'Double overtime': 'dt_hours_raw',
+  'Double Overtime': 'dt_hours_raw',
+  'DT cost': 'dt_cost_raw',
+  'DT Cost': 'dt_cost_raw',
+  'Double time cost': 'dt_cost_raw',
+  'Double Time Cost': 'dt_cost_raw',
+  'Benefits': 'benefits_cost_raw',
+  'benefits': 'benefits_cost_raw',
+  'Benefit': 'benefits_cost_raw',
+  'benefit': 'benefits_cost_raw',
+  'Total benefits': 'benefits_cost_raw',
+  'Total Benefits': 'benefits_cost_raw',
+  'Benefits cost': 'benefits_cost_raw',
+  'Benefits Cost': 'benefits_cost_raw',
+  'Benefits rate': 'benefits_rate_raw',
+  'Benefits Rate': 'benefits_rate_raw',
   'Hourly rate (USD)': 'hourly_rate',
   hourly_rate: 'hourly_rate',
   rate: 'hourly_rate',
@@ -229,9 +270,13 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
             ? parseHoursToDecimal(normalizedRow['ot_hours_raw'])
             : (shiftHours > 8 ? parseFloat((shiftHours - 8).toFixed(2)) : 0);
 
+          const dtHours = normalizedRow['dt_hours_raw'] !== undefined
+            ? parseHoursToDecimal(normalizedRow['dt_hours_raw'])
+            : 0;
+
           const regularHours = normalizedRow['regular_hours_raw'] !== undefined
             ? parseHoursToDecimal(normalizedRow['regular_hours_raw'])
-            : Math.max(0, parseFloat((shiftHours - otHours).toFixed(2)));
+            : Math.max(0, parseFloat((shiftHours - otHours - dtHours).toFixed(2)));
 
           const regularCost = normalizedRow['regular_cost_raw'] !== undefined
             ? parseFloat(normalizedRow['regular_cost_raw']) || 0
@@ -241,11 +286,43 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
             ? parseFloat(normalizedRow['ot_cost_raw']) || 0
             : parseFloat((otHours * hourlyRate * 1.5).toFixed(2));
 
+          const dtCost = normalizedRow['dt_cost_raw'] !== undefined
+            ? parseFloat(normalizedRow['dt_cost_raw']) || 0
+            : parseFloat((dtHours * hourlyRate * 2.0).toFixed(2));
+
+          const activeCategories = laborRateCategories && laborRateCategories.length > 0 ? laborRateCategories : DEFAULT_LABOR_RATE_CATEGORIES;
+          const parentWo = workOrders.find((w: any) => String(w.work_order_number).trim() === String(rawWo).trim());
+          const roleCat = classifyLaborRole(
+            hourlyRate,
+            activeCategories,
+            fullName,
+            parentWo,
+            allGfNames,
+            allForemanNames
+          );
+
+          const roleBenefitsRate = normalizedRow['benefits_rate_raw'] !== undefined
+            ? parseFloat(normalizedRow['benefits_rate_raw']) || 0
+            : getLaborRoleBenefitsRate(roleCat, activeCategories);
+
+          const benefitsCost = normalizedRow['benefits_cost_raw'] !== undefined
+            ? parseFloat(normalizedRow['benefits_cost_raw']) || 0
+            : parseFloat((shiftHours * roleBenefitsRate).toFixed(2));
+
+          const calculatedTotalCost = parseFloat((regularCost + otCost + dtCost + benefitsCost).toFixed(2));
           const lineCost = normalizedRow['line_labor_cost_raw'] !== undefined
             ? parseFloat(normalizedRow['line_labor_cost_raw']) || 0
-            : parseFloat((regularCost + otCost).toFixed(2));
+            : calculatedTotalCost;
 
-          const shiftDate = parseExcelDate(normalizedRow['shift_date']) || normalizedRow['shift_date'] || new Date().toISOString().split('T')[0];
+          const rawStartDate = normalizedRow['start_date_raw'] || normalizedRow['shift_date_raw'] || normalizedRow['shift_date'];
+          const rawEndDate = normalizedRow['end_date_raw'] || normalizedRow['start_date_raw'] || normalizedRow['shift_date_raw'] || normalizedRow['shift_date'];
+
+          const parsedStartDate = parseExcelDate(rawStartDate) || (rawStartDate ? String(rawStartDate).trim() : null);
+          const parsedEndDate = parseExcelDate(rawEndDate) || (rawEndDate ? String(rawEndDate).trim() : null);
+
+          const fallbackDate = new Date().toISOString().split('T')[0];
+          const finalStartDate = parsedStartDate || parsedEndDate || fallbackDate;
+          const finalEndDate = parsedEndDate || parsedStartDate || fallbackDate;
 
           normalizedRow['work_order_number'] = String(rawWo).trim();
           normalizedRow['employee_name'] = fullName;
@@ -253,20 +330,16 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
           normalizedRow['hourly_rate'] = hourlyRate;
           normalizedRow['ot_hours'] = otHours;
           normalizedRow['ot_cost'] = otCost;
+          normalizedRow['dt_hours'] = dtHours;
+          normalizedRow['dt_cost'] = dtCost;
+          normalizedRow['benefits_rate'] = roleBenefitsRate;
+          normalizedRow['benefits_cost'] = benefitsCost;
           normalizedRow['line_labor_cost'] = lineCost;
-          normalizedRow['shift_date'] = shiftDate;
+          normalizedRow['start_date'] = finalStartDate;
+          normalizedRow['end_date'] = finalEndDate;
+          normalizedRow['shift_date'] = finalStartDate;
           normalizedRow['clock_in'] = normalizedRow['clock_in'] || null;
           normalizedRow['clock_out'] = normalizedRow['clock_out'] || null;
-
-          const parentWo = workOrders.find((w: any) => String(w.work_order_number).trim() === String(rawWo).trim());
-          const roleCat = classifyLaborRole(
-            hourlyRate,
-            laborRateCategories && laborRateCategories.length > 0 ? laborRateCategories : DEFAULT_LABOR_RATE_CATEGORIES,
-            fullName,
-            parentWo,
-            allGfNames,
-            allForemanNames
-          );
           normalizedRow['role_category'] = roleCat;
         }
 

@@ -66,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, onOpenUp
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl md:text-2xl font-bold tracking-tight text-white my-0">
-              Grid Utilities Console
+              Power Grid Utilities Console
             </h1>
             <span
               className={`px-2 py-0.5 text-[10px] font-bold rounded-md uppercase tracking-wider border ${getRoleBadgeClasses(

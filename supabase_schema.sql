@@ -41,26 +41,57 @@ CREATE TABLE IF NOT EXISTS public.connecteam_labor_entries (
     hourly_rate NUMERIC NOT NULL DEFAULT 0,
     ot_hours NUMERIC NOT NULL DEFAULT 0,
     ot_cost NUMERIC NOT NULL DEFAULT 0,
+    dt_hours NUMERIC NOT NULL DEFAULT 0,
+    dt_cost NUMERIC NOT NULL DEFAULT 0,
+    benefits_cost NUMERIC NOT NULL DEFAULT 0,
+    benefits_rate NUMERIC NOT NULL DEFAULT 0,
     line_labor_cost NUMERIC NOT NULL DEFAULT 0,
     role_category TEXT NOT NULL DEFAULT 'unclassified',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Ensure OT columns exist on existing table instances
+-- Ensure OT, DT, and Benefits columns exist on existing table instances
 ALTER TABLE IF EXISTS public.connecteam_labor_entries 
 ADD COLUMN IF NOT EXISTS ot_hours NUMERIC NOT NULL DEFAULT 0;
 
 ALTER TABLE IF EXISTS public.connecteam_labor_entries 
 ADD COLUMN IF NOT EXISTS ot_cost NUMERIC NOT NULL DEFAULT 0;
 
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS dt_hours NUMERIC NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS dt_cost NUMERIC NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS benefits_cost NUMERIC NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS benefits_rate NUMERIC NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS start_date TEXT;
+
+ALTER TABLE IF EXISTS public.connecteam_labor_entries 
+ADD COLUMN IF NOT EXISTS end_date TEXT;
+
 -- Create Labor Rate Categories Table if not exists
 CREATE TABLE IF NOT EXISTS public.labor_rate_categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     category_name TEXT NOT NULL UNIQUE,
     standard_rate NUMERIC NOT NULL,
-    match_tolerance NUMERIC NOT NULL DEFAULT 0.10,
+    ot_rate NUMERIC,
+    dt_rate NUMERIC,
+    benefits_rate NUMERIC,
+    match_tolerance NUMERIC NOT NULL DEFAULT 0.20,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure ot_rate, dt_rate, and benefits_rate columns exist on labor_rate_categories
+ALTER TABLE IF EXISTS public.labor_rate_categories
+ADD COLUMN IF NOT EXISTS ot_rate NUMERIC,
+ADD COLUMN IF NOT EXISTS dt_rate NUMERIC,
+ADD COLUMN IF NOT EXISTS benefits_rate NUMERIC;
 
 -- Create Expense Overrides Table if not exists
 CREATE TABLE IF NOT EXISTS public.expense_overrides (
@@ -72,16 +103,22 @@ CREATE TABLE IF NOT EXISTS public.expense_overrides (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Insert Default Labor Rate Categories
-INSERT INTO public.labor_rate_categories (category_name, standard_rate, match_tolerance)
+-- Insert Default Labor Rate Categories (7 standard roles with base wages, OT, DT, and benefits)
+INSERT INTO public.labor_rate_categories (category_name, standard_rate, ot_rate, dt_rate, benefits_rate, match_tolerance)
 VALUES 
-    ('GForeman', 55.70, 0.10),
-    ('Foreman', 54.70, 0.10),
-    ('Journeyman', 51.16, 0.10),
-    ('Apprentice', 38.37, 0.10),
-    ('Groundman', 25.66, 0.10)
+    ('General Foreman', 58.49, 87.74, 116.98, 25.22, 0.20),
+    ('Foreman', 57.30, 85.95, 114.60, 24.90, 0.20),
+    ('Journeyman', 53.72, 80.58, 107.44, 23.89, 0.20),
+    ('Pole Truck Driver', 40.23, 60.35, 80.46, 18.56, 0.20),
+    ('Apprentice', 37.60, 56.40, 75.20, 15.48, 0.20),
+    ('Groundman', 26.94, 40.41, 53.88, 14.66, 0.20),
+    ('Pole Truck Helper', 15.00, 22.50, 30.00, 9.48, 0.20)
 ON CONFLICT (category_name) DO UPDATE 
-SET standard_rate = EXCLUDED.standard_rate, match_tolerance = EXCLUDED.match_tolerance;
+SET standard_rate = EXCLUDED.standard_rate,
+    ot_rate = EXCLUDED.ot_rate,
+    dt_rate = EXCLUDED.dt_rate,
+    benefits_rate = EXCLUDED.benefits_rate,
+    match_tolerance = EXCLUDED.match_tolerance;
 
 -- Enable Row Level Security (RLS) on all tables
 ALTER TABLE public.work_orders ENABLE ROW LEVEL SECURITY;
