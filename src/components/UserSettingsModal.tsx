@@ -132,7 +132,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
   ) => {
     const loginUrl = window.location.origin;
     const roleLabel = role === 'Supervisor' ? 'Supervisor (Owner)' : role;
-    return `Hello ${memberName || 'Team Member'},\n\nYou have been invited to join the Grid Utilities Console portal as a ${roleLabel}.\n\nHere are your login credentials:\n• Portal URL: ${loginUrl}\n• Work Email: ${memberEmail}\n• Temporary Password: ${pass}\n• Assigned Role: ${roleLabel}\n\nPlease visit ${loginUrl} to log in. You can change your password anytime under Settings > Password & Security.\n\nBest regards,\nGrid Utilities Operations Team`;
+    return `Hello ${memberName || 'Team Member'},\n\nYou have been invited to join the Power Grid Utilities Console portal as a ${roleLabel}.\n\nHere are your login credentials:\n• Portal URL: ${loginUrl}\n• Work Email: ${memberEmail}\n• Temporary Password: ${pass}\n• Assigned Role: ${roleLabel}\n\nPlease visit ${loginUrl} to log in. You can change your password anytime under Settings > Password & Security.\n\nBest regards,\nPower Grid Utilities Operations Team`;
   };
 
   // Invite member handler
@@ -181,7 +181,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
       lastInvitedCredentials.role === 'Supervisor'
         ? 'Supervisor (Owner)'
         : lastInvitedCredentials.role;
-    const text = `Grid Utilities Portal Login Credentials:\nEmail: ${lastInvitedCredentials.email}\nPassword: ${lastInvitedCredentials.pass}\nRole: ${roleLabel}\nLogin at: ${window.location.origin}`;
+    const text = `Power Grid Utilities Portal Login Credentials:\nEmail: ${lastInvitedCredentials.email}\nPassword: ${lastInvitedCredentials.pass}\nRole: ${roleLabel}\nLogin at: ${window.location.origin}`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -205,7 +205,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
     pass: string,
     role: string
   ) => {
-    const subject = encodeURIComponent(`Welcome to Grid Utilities Console - Login Credentials`);
+    const subject = encodeURIComponent(`Welcome to Power Grid Utilities Console - Login Credentials`);
     const body = encodeURIComponent(generateInviteEmailBody(memberName, memberEmail, pass, role));
     window.open(`mailto:${memberEmail}?subject=${subject}&body=${body}`, '_blank');
   };

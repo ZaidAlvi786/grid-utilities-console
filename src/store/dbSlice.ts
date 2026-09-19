@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { supabase } from '../utils/supabaseClient';
 import { Invoice, LaborEntry, LaborRateCategory } from '../types/schemas';
-import { runSyntheticJoin, deriveArea, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
+import { runSyntheticJoin, deriveArea, DEFAULT_LABOR_RATE_CATEGORIES, getLaborRoleBenefitsRate } from '../utils/helpers';
 
 export interface ReconciliationSummary {
   uploadedType: 'work_orders' | 'invoices' | 'timesheet' | 'master';
@@ -23,29 +23,15 @@ export interface DbState {
   status: 'idle' | 'loading' | 'succeeded' | 'failed';
 }
 
-const LOCAL_TIMESHEET_KEY = 'grid_utilities_timesheets_v3';
 const LOCAL_OVERRIDES_KEY = 'grid_utilities_overrides_v3';
 
-// Helper to load persisted timesheets from browser storage
-const loadPersistedTimesheets = (): LaborEntry[] => {
-  try {
-    const raw = localStorage.getItem(LOCAL_TIMESHEET_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (e) {}
-  return [];
-};
-
-// Helper to save timesheets to browser storage
-const savePersistedTimesheets = (entries: LaborEntry[]) => {
-  try {
-    localStorage.setItem(LOCAL_TIMESHEET_KEY, JSON.stringify(entries));
-  } catch (e) {
-    console.warn('Could not save timesheets to localStorage quota:', e);
-  }
-};
+// Clear any previously cached timesheet data from localStorage to ensure strictly live database operations
+try {
+  localStorage.removeItem('grid_utilities_timesheets_v4');
+  localStorage.removeItem('grid_utilities_timesheets_v3');
+  localStorage.removeItem('grid_utilities_timesheets_v2');
+  localStorage.removeItem('grid_utilities_timesheets');
+} catch (e) {}
 
 // Helper to load persisted overrides
 const loadPersistedOverrides = (): Record<string, any> => {
@@ -131,12 +117,10 @@ const upsertInChunks = async (table: string, items: any[], onConflictKey?: strin
   }
 };
 
-const savedTimesheets = loadPersistedTimesheets();
-
 const initialState: DbState = {
   workOrders: [],
   invoices: [],
-  laborEntries: savedTimesheets,
+  laborEntries: [],
   laborRateCategories: DEFAULT_LABOR_RATE_CATEGORIES,
   overrides: loadPersistedOverrides(),
   dailyExpenseRate: 5800,
@@ -153,7 +137,6 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
       fetchAllRows('connecteam_labor_entries')
     ]);
 
-    const persistedLabor = loadPersistedTimesheets();
     const persistedOverrides = loadPersistedOverrides();
 
     const ovrMap: Record<string, any> = { ...persistedOverrides };
@@ -181,10 +164,11 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
       parsedWorkOrders
     );
 
-    const parsedLabor = (labor && labor.length > 0) ? labor : persistedLabor;
-    if (labor && labor.length > 0) {
-      savePersistedTimesheets(labor);
-    }
+    const parsedLabor = (labor || []).map((e: any) => ({
+      ...e,
+      start_date: e.start_date || e.shift_date,
+      end_date: e.end_date || e.shift_date,
+    }));
 
     return {
       workOrders: parsedWorkOrders,
@@ -195,11 +179,10 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
     };
   } catch (error) {
     console.error('Error in fetchDbState:', error);
-    const persistedLabor = loadPersistedTimesheets();
     return {
       workOrders: [],
       invoices: [],
-      laborEntries: persistedLabor,
+      laborEntries: [],
       laborRateCategories: DEFAULT_LABOR_RATE_CATEGORIES,
       overrides: loadPersistedOverrides(),
     };
@@ -307,9 +290,26 @@ export const uploadTimesheetThunk = createAsyncThunk(
       const otCost = e.ot_cost !== undefined && e.ot_cost !== null && !isNaN(Number(e.ot_cost)) && Number(e.ot_cost) > 0
         ? Number(e.ot_cost)
         : parseFloat((otHours * e.hourly_rate * 1.5).toFixed(2));
-      const regularHours = Math.max(0, parseFloat((e.shift_hours - otHours).toFixed(2)));
+
+      const dtHours = e.dt_hours !== undefined && e.dt_hours !== null && !isNaN(Number(e.dt_hours))
+        ? Number(e.dt_hours)
+        : 0;
+      const dtCost = e.dt_cost !== undefined && e.dt_cost !== null && !isNaN(Number(e.dt_cost)) && Number(e.dt_cost) > 0
+        ? Number(e.dt_cost)
+        : parseFloat((dtHours * e.hourly_rate * 2.0).toFixed(2));
+
+      const regularHours = Math.max(0, parseFloat((e.shift_hours - otHours - dtHours).toFixed(2)));
       const regularCost = parseFloat((regularHours * e.hourly_rate).toFixed(2));
-      const calculatedLaborCost = parseFloat((regularCost + otCost).toFixed(2));
+
+      const roleBenefitsRate = e.benefits_rate !== undefined && e.benefits_rate !== null && !isNaN(Number(e.benefits_rate)) && Number(e.benefits_rate) > 0
+        ? Number(e.benefits_rate)
+        : getLaborRoleBenefitsRate(e.role_category, DEFAULT_LABOR_RATE_CATEGORIES);
+
+      const benefitsCost = e.benefits_cost !== undefined && e.benefits_cost !== null && !isNaN(Number(e.benefits_cost)) && Number(e.benefits_cost) > 0
+        ? Number(e.benefits_cost)
+        : parseFloat((e.shift_hours * roleBenefitsRate).toFixed(2));
+
+      const calculatedLaborCost = parseFloat((regularCost + otCost + dtCost + benefitsCost).toFixed(2));
 
       const lineLaborCost = (e.line_labor_cost !== undefined && e.line_labor_cost !== null && !isNaN(Number(e.line_labor_cost)) && Number(e.line_labor_cost) > 0)
         ? Number(e.line_labor_cost)
@@ -322,12 +322,18 @@ export const uploadTimesheetThunk = createAsyncThunk(
         work_order_number: String(e.work_order_number).trim(),
         employee_name: e.employee_name,
         shift_date: e.shift_date,
+        start_date: e.start_date || e.shift_date,
+        end_date: e.end_date || e.shift_date,
         clock_in: e.clock_in || null,
         clock_out: e.clock_out || null,
         shift_hours: e.shift_hours,
         hourly_rate: e.hourly_rate,
         ot_hours: otHours,
         ot_cost: otCost,
+        dt_hours: dtHours,
+        dt_cost: dtCost,
+        benefits_rate: roleBenefitsRate,
+        benefits_cost: benefitsCost,
         line_labor_cost: lineLaborCost,
         role_category: e.role_category,
       };
@@ -335,10 +341,15 @@ export const uploadTimesheetThunk = createAsyncThunk(
 
     try {
       await upsertInChunks('connecteam_labor_entries', formatted, 'id');
-      savePersistedTimesheets(formatted);
     } catch (e: any) {
-      console.error('Supabase connecteam_labor_entries upsert error:', e);
-      throw e;
+      console.warn('Supabase connecteam_labor_entries upsert warning, attempting legacy payload fallback:', e);
+      try {
+        const legacyFormatted = formatted.map(({ dt_hours, dt_cost, benefits_cost, benefits_rate, start_date, end_date, ...rest }) => rest);
+        await upsertInChunks('connecteam_labor_entries', legacyFormatted, 'id');
+      } catch (fallbackErr) {
+        console.error('Supabase connecteam_labor_entries upsert error:', fallbackErr);
+        throw fallbackErr;
+      }
     }
 
     return formatted;
@@ -528,7 +539,6 @@ export const dbSlice = createSlice({
           affected.push(entry.work_order_number);
           state.laborEntries.unshift(entry);
         });
-        savePersistedTimesheets(state.laborEntries);
         state.reconciliationSummary = calculateReconciliation(
           affected,
           state.invoices,

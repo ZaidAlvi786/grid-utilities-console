@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { LaborEntry, WorkOrder } from '../types/schemas';
-import { formatCurrency, formatHours, classifyLaborRole, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
+import { formatCurrency, formatHours, classifyLaborRole, getLaborRoleBenefitsRate, DEFAULT_LABOR_RATE_CATEGORIES } from '../utils/helpers';
 import {
   Users,
   Clock,
@@ -82,20 +82,15 @@ export const TimesheetTab: React.FC = () => {
     return parseFloat((otH * e.hourly_rate * 1.5).toFixed(2));
   };
 
-  const getEntryRegularHours = (e: LaborEntry): number => {
-    const otH = getEntryOtHours(e);
-    return Math.max(0, parseFloat((e.shift_hours - otH).toFixed(2)));
+  const getEntryDtHours = (e: LaborEntry): number => {
+    if (e.dt_hours !== undefined && e.dt_hours !== null && !isNaN(Number(e.dt_hours))) return Number(e.dt_hours);
+    return 0;
   };
 
-  const getEntryRegularCost = (e: LaborEntry): number => {
-    const regH = getEntryRegularHours(e);
-    return parseFloat((regH * e.hourly_rate).toFixed(2));
-  };
-
-  const getEntryLaborCost = (e: LaborEntry): number => {
-    const regCost = getEntryRegularCost(e);
-    const otCost = getEntryOtCost(e);
-    return parseFloat((regCost + otCost).toFixed(2));
+  const getEntryDtCost = (e: LaborEntry): number => {
+    if (e.dt_cost !== undefined && e.dt_cost !== null && !isNaN(Number(e.dt_cost)) && Number(e.dt_cost) > 0) return Number(e.dt_cost);
+    const dtH = getEntryDtHours(e);
+    return parseFloat((dtH * e.hourly_rate * 2.0).toFixed(2));
   };
 
   const getEntryRole = (entry: LaborEntry): string => {
@@ -108,6 +103,35 @@ export const TimesheetTab: React.FC = () => {
       gfNamesSet,
       foremanNamesSet
     );
+  };
+
+  const getEntryBenefitsCost = (e: LaborEntry): number => {
+    if (e.benefits_cost !== undefined && e.benefits_cost !== null && !isNaN(Number(e.benefits_cost)) && Number(e.benefits_cost) > 0) return Number(e.benefits_cost);
+    const role = getEntryRole(e);
+    const bRate = e.benefits_rate || getLaborRoleBenefitsRate(role, laborRateCategories);
+    return parseFloat((e.shift_hours * bRate).toFixed(2));
+  };
+
+  const getEntryRegularHours = (e: LaborEntry): number => {
+    const otH = getEntryOtHours(e);
+    const dtH = getEntryDtHours(e);
+    return Math.max(0, parseFloat((e.shift_hours - otH - dtH).toFixed(2)));
+  };
+
+  const getEntryRegularCost = (e: LaborEntry): number => {
+    const regH = getEntryRegularHours(e);
+    return parseFloat((regH * e.hourly_rate).toFixed(2));
+  };
+
+  const getEntryLaborCost = (e: LaborEntry): number => {
+    if (e.line_labor_cost !== undefined && e.line_labor_cost !== null && !isNaN(Number(e.line_labor_cost)) && Number(e.line_labor_cost) > 0) {
+      return Number(e.line_labor_cost);
+    }
+    const regCost = getEntryRegularCost(e);
+    const otCost = getEntryOtCost(e);
+    const dtCost = getEntryDtCost(e);
+    const benefitsCost = getEntryBenefitsCost(e);
+    return parseFloat((regCost + otCost + dtCost + benefitsCost).toFixed(2));
   };
 
   // Reset to page 1 whenever filters or search query change
@@ -147,9 +171,11 @@ export const TimesheetTab: React.FC = () => {
     if (selectedRoleFilter === 'all') return baseFilteredEntries;
     return baseFilteredEntries.filter((entry) => {
       const roleCat = getEntryRole(entry);
-      return selectedRoleFilter === 'unclassified'
-        ? roleCat === 'unclassified'
-        : roleCat.toLowerCase() === selectedRoleFilter.toLowerCase();
+      if (selectedRoleFilter === 'unclassified') return roleCat === 'unclassified';
+      if (selectedRoleFilter === 'General Foreman' || selectedRoleFilter === 'GForeman') {
+        return roleCat === 'General Foreman' || roleCat === 'GForeman';
+      }
+      return roleCat.toLowerCase() === selectedRoleFilter.toLowerCase();
     });
   }, [baseFilteredEntries, selectedRoleFilter, woMap, laborRateCategories, gfNamesSet, foremanNamesSet]);
 
@@ -174,6 +200,15 @@ export const TimesheetTab: React.FC = () => {
       } else if (sortField === 'ot_cost') {
         aVal = getEntryOtCost(a);
         bVal = getEntryOtCost(b);
+      } else if (sortField === 'dt_hours') {
+        aVal = getEntryDtHours(a);
+        bVal = getEntryDtHours(b);
+      } else if (sortField === 'dt_cost') {
+        aVal = getEntryDtCost(a);
+        bVal = getEntryDtCost(b);
+      } else if (sortField === 'benefits_cost') {
+        aVal = getEntryBenefitsCost(a);
+        bVal = getEntryBenefitsCost(b);
       } else if (sortField === 'line_labor_cost') {
         aVal = getEntryLaborCost(a);
         bVal = getEntryLaborCost(b);
@@ -208,19 +243,22 @@ export const TimesheetTab: React.FC = () => {
   const baseTotalHours = useMemo(() => baseFilteredEntries.reduce((sum, e) => sum + e.shift_hours, 0), [baseFilteredEntries]);
   const baseTotalHeadcount = useMemo(() => new Set(baseFilteredEntries.map((e) => e.employee_name.trim())).size, [baseFilteredEntries]);
 
-  // Role Breakdown with distinct employee headcount tracking
+  // Role Breakdown with distinct employee headcount tracking across all 7 roles
   const roleBreakdown = useMemo(() => {
     const map: Record<string, { count: number; hours: number; cost: number; employees: Set<string> }> = {
-      GForeman: { count: 0, hours: 0, cost: 0, employees: new Set() },
+      'General Foreman': { count: 0, hours: 0, cost: 0, employees: new Set() },
       Foreman: { count: 0, hours: 0, cost: 0, employees: new Set() },
       Journeyman: { count: 0, hours: 0, cost: 0, employees: new Set() },
+      'Pole Truck Driver': { count: 0, hours: 0, cost: 0, employees: new Set() },
       Apprentice: { count: 0, hours: 0, cost: 0, employees: new Set() },
       Groundman: { count: 0, hours: 0, cost: 0, employees: new Set() },
+      'Pole Truck Helper': { count: 0, hours: 0, cost: 0, employees: new Set() },
       unclassified: { count: 0, hours: 0, cost: 0, employees: new Set() }
     };
 
     baseFilteredEntries.forEach((entry) => {
-      const cat = getEntryRole(entry);
+      let cat = getEntryRole(entry);
+      if (cat === 'GForeman') cat = 'General Foreman';
       if (!map[cat]) {
         map[cat] = { count: 0, hours: 0, cost: 0, employees: new Set() };
       }
@@ -302,16 +340,21 @@ export const TimesheetTab: React.FC = () => {
 
   const getRoleDisplayName = (role: string) => {
     switch (role) {
+      case 'General Foreman':
       case 'GForeman':
         return 'General Foreman';
       case 'Foreman':
         return 'Foreman';
       case 'Journeyman':
         return 'Journeyman Lineman';
+      case 'Pole Truck Driver':
+        return 'Pole Truck Driver';
       case 'Apprentice':
         return 'Apprentice Lineman';
       case 'Groundman':
         return 'Groundman';
+      case 'Pole Truck Helper':
+        return 'Pole Truck Helper';
       case 'unclassified':
       default:
         return 'Unclassified Rate';
@@ -320,16 +363,21 @@ export const TimesheetTab: React.FC = () => {
 
   const getRoleCategoryBadge = (role: string) => {
     switch (role) {
+      case 'General Foreman':
       case 'GForeman':
         return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'Foreman':
         return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'Journeyman':
         return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'Pole Truck Driver':
+        return 'bg-cyan-50 text-cyan-700 border-cyan-200';
       case 'Apprentice':
         return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'Groundman':
         return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'Pole Truck Helper':
+        return 'bg-slate-100 text-slate-700 border-slate-300';
       case 'unclassified':
       default:
         return 'bg-red-50 text-red-700 border-red-200 font-semibold';
@@ -347,7 +395,7 @@ export const TimesheetTab: React.FC = () => {
           <div>
             <h2 className="text-xl font-extrabold text-slate-900 tracking-tight my-0">Connecteam Labor & Timesheets</h2>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Role classification with standard rates and crew assignments. Labor Cost is calculated as Regular Cost + OT Cost (1.5x).
+              Role classification with standard rates and crew assignments. Labor Cost is calculated as Regular Cost + OT (1.5x) + DT (2.0x) + Benefits.
             </p>
           </div>
         </div>
@@ -389,7 +437,7 @@ export const TimesheetTab: React.FC = () => {
             {isEmployee ? '***' : formatCurrency(totalLaborCost)}
           </h1>
           <p className="text-xs text-slate-500 font-medium">
-            Regular Cost + <span className="font-semibold text-amber-600">OT (1.5x)</span> applied
+            Regular + <span className="font-semibold text-amber-600">OT (1.5x)</span> + <span className="font-semibold text-orange-600">DT (2.0x)</span> + Benefits applied
           </p>
           <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4 overflow-hidden">
             <div className="bg-emerald-600 h-full rounded-full" style={{ width: '100%' }} />
@@ -471,11 +519,13 @@ export const TimesheetTab: React.FC = () => {
                 className="bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:bg-white focus:border-blue-500 cursor-pointer font-medium"
               >
                 <option value="all">All Roles & Categories</option>
-                <option value="GForeman">General Foreman ($55.70)</option>
-                <option value="Foreman">Foreman ($54.70)</option>
-                <option value="Journeyman">Journeyman ($51.16)</option>
-                <option value="Apprentice">Apprentice ($38.37)</option>
-                <option value="Groundman">Groundman ($25.66)</option>
+                <option value="General Foreman">General Foreman ($58.49)</option>
+                <option value="Foreman">Foreman ($57.30)</option>
+                <option value="Journeyman">Journeyman ($53.72)</option>
+                <option value="Pole Truck Driver">Pole Truck Driver ($40.23)</option>
+                <option value="Apprentice">Apprentice ($37.60)</option>
+                <option value="Groundman">Groundman ($26.94)</option>
+                <option value="Pole Truck Helper">Pole Truck Helper ($15.00)</option>
                 <option value="unclassified">Unclassified Rates Only</option>
               </select>
             </div>
@@ -521,11 +571,11 @@ export const TimesheetTab: React.FC = () => {
           <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
             <tr>
               <th
-                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors"
+                className="py-3 px-4 cursor-pointer hover:text-slate-800 transition-colors whitespace-nowrap"
                 onClick={() => handleSort('shift_date')}
               >
                 <div className="flex items-center gap-1.5">
-                  <span>Shift Date</span>
+                  <span>Shift Date (Start - End)</span>
                   <ArrowUpDown className="w-3 h-3" />
                 </div>
               </th>
@@ -612,6 +662,33 @@ export const TimesheetTab: React.FC = () => {
               </th>
               <th
                 className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('dt_hours')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>DT Hours</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('dt_cost')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>DT Cost</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
+                onClick={() => handleSort('benefits_cost')}
+              >
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>Benefits</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th
+                className="py-3 px-4 text-right cursor-pointer hover:text-slate-800 transition-colors"
                 onClick={() => handleSort('line_labor_cost')}
               >
                 <div className="flex items-center justify-end gap-1.5">
@@ -627,7 +704,25 @@ export const TimesheetTab: React.FC = () => {
               const wo = woMap.get(String(entry.work_order_number || '').trim());
               return (
                 <tr key={entry.id || (entry.work_order_number + '-' + entry.shift_date + '-' + entry.employee_name)} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">{entry.shift_date}</td>
+                  <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                    {entry.start_date && entry.end_date && entry.start_date !== entry.end_date ? (
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                          <span>{entry.start_date}</span>
+                          <span className="text-slate-400 font-normal">→</span>
+                          <span>{entry.end_date}</span>
+                        </div>
+                        <span className="text-[10px] text-indigo-600 font-sans font-medium">Overnight shift</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800">{entry.start_date || entry.shift_date}</span>
+                        <span className="text-[10px] text-slate-400 font-sans">
+                          {entry.end_date ? `End: ${entry.end_date}` : 'Single-day'}
+                        </span>
+                      </div>
+                    )}
+                  </td>
                   <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">{entry.employee_name}</td>
                   <td className="py-3 px-4 font-mono font-semibold text-blue-600 whitespace-nowrap">
                     {entry.work_order_number ? `#${entry.work_order_number}` : <span className="text-slate-400 italic">Unassigned</span>}
@@ -664,6 +759,15 @@ export const TimesheetTab: React.FC = () => {
                   <td className="py-3 px-4 text-right font-mono text-amber-700 font-semibold">
                     {isEmployee ? '***' : formatCurrency(getEntryOtCost(entry))}
                   </td>
+                  <td className="py-3 px-4 text-right font-mono text-orange-600 font-semibold">
+                    {formatHours(getEntryDtHours(entry))}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-orange-700 font-semibold">
+                    {isEmployee ? '***' : formatCurrency(getEntryDtCost(entry))}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-purple-700 font-semibold">
+                    {isEmployee ? '***' : formatCurrency(getEntryBenefitsCost(entry))}
+                  </td>
                   <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600">
                     {isEmployee ? '***' : formatCurrency(getEntryLaborCost(entry))}
                   </td>
@@ -685,7 +789,7 @@ export const TimesheetTab: React.FC = () => {
             })}
             {paginatedEntries.length === 0 && (
               <tr>
-                <td colSpan={12} className="py-8 px-4 text-center text-slate-400">
+                <td colSpan={15} className="py-8 px-4 text-center text-slate-400">
                   No timesheet entries matched your search criteria.
                 </td>
               </tr>
@@ -842,15 +946,19 @@ export const TimesheetTab: React.FC = () => {
                       className={'h-full rounded-full transition-all duration-500 ' + (
                         category === 'unclassified'
                           ? 'bg-red-500'
-                          : category === 'GForeman'
+                          : category === 'General Foreman' || category === 'GForeman'
                           ? 'bg-purple-600'
                           : category === 'Foreman'
                           ? 'bg-blue-600'
                           : category === 'Journeyman'
                           ? 'bg-indigo-600'
+                          : category === 'Pole Truck Driver'
+                          ? 'bg-cyan-600'
                           : category === 'Apprentice'
                           ? 'bg-emerald-600'
-                          : 'bg-amber-500'
+                          : category === 'Groundman'
+                          ? 'bg-amber-500'
+                          : 'bg-slate-500'
                       )}
                       style={{ width: `${Math.max(pctOfHours, 1)}%` }}
                     />
@@ -996,11 +1104,18 @@ export const TimesheetTab: React.FC = () => {
                       <div>
                         <span className="font-bold text-slate-800">{e.employee_name}</span>
                         <span className="text-slate-500 text-[10px] block mt-0.5">
-                          {e.shift_date} · <span className={getRoleCategoryBadge(getEntryRole(e))}>{getEntryRole(e)}</span>
+                          {e.start_date && e.end_date && e.start_date !== e.end_date
+                            ? `${e.start_date} → ${e.end_date}`
+                            : (e.start_date || e.shift_date)} · <span className={getRoleCategoryBadge(getEntryRole(e))}>{getEntryRole(e)}</span>
                         </span>
                       </div>
                       <div className="text-right font-mono">
                         <div className="text-slate-700 font-medium">{formatHours(e.shift_hours)} @ {formatCurrency(e.hourly_rate)}/hr</div>
+                        <div className="text-[10px] text-slate-400">
+                          {getEntryOtHours(e) > 0 ? `OT: ${formatHours(getEntryOtHours(e))} · ` : ''}
+                          {getEntryDtHours(e) > 0 ? `DT: ${formatHours(getEntryDtHours(e))} · ` : ''}
+                          {`Ben: ${formatCurrency(getEntryBenefitsCost(e))}`}
+                        </div>
                         <div className="text-emerald-600 font-bold">{formatCurrency(getEntryLaborCost(e))}</div>
                       </div>
                     </div>

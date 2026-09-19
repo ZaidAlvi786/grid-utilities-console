@@ -113,7 +113,7 @@ export const LoginPage: React.FC = () => {
             <LayoutGrid className="w-7 h-7 text-white" />
           </motion.div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Grid Utilities Console
+            Power Grid Utilities Console
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
             Sign in to access your role-based console
