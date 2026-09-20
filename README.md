@@ -1,32 +1,47 @@
-# React + TypeScript + Vite
+# ⚡ Power Grid Utilities Console
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+An enterprise web application for utility contractors to manage **Coupa Invoices**, **Fulcrum Work Orders**, and **Connecteam Labor Timesheets**, providing real-time gross margin tracking, role classification, and crew performance analytics.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 📖 Documentation
 
-## React Compiler
+* **[Calculations & Data Guide (`GUIDE_ME.md`)](./GUIDE_ME.md)**: Plain-English guide explaining every metric, dollar amount, labor calculation, and chart formula without technical jargon.
+* **[Developer Guide (`DEVELOPER_GUIDE.md`)](./DEVELOPER_GUIDE.md)**: Detailed file-by-file mapping, system architecture, Redux data flow, and role classification logic.
+* **[Database Schema (`supabase_schema.sql`)](./supabase_schema.sql)**: PostgreSQL schema definitions, table constraints, and indexes for Supabase.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the Oxlint configuration
+## 🚀 Quick Start
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+### 1. Prerequisites
+* Node.js (v18+)
+* Supabase Account & Project
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+### 2. Environment Setup
+Create a `.env` file in the project root:
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+### 3. Installation & Run
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+```
+
+---
+
+## 🛠️ Tech Stack
+* **Frontend**: React 18, TypeScript, Vite
+* **State Management**: Redux Toolkit (`@reduxjs/toolkit`, `react-redux`)
+* **Styling**: Tailwind CSS, Lucide Icons, Framer Motion
+* **Database**: Supabase (PostgreSQL)
+* **Data Processing**: SheetJS (`xlsx`)

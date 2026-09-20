@@ -1,7 +1,14 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { supabase } from '../utils/supabaseClient';
-import { Invoice, LaborEntry, LaborRateCategory } from '../types/schemas';
-import { runSyntheticJoin, deriveArea, DEFAULT_LABOR_RATE_CATEGORIES, getLaborRoleBenefitsRate } from '../utils/helpers';
+import { Invoice, LaborEntry, LaborRateCategory, WorkOrder } from '../types/schemas';
+import {
+  runSyntheticJoin,
+  deriveArea,
+  DEFAULT_LABOR_RATE_CATEGORIES,
+  getLaborRoleBenefitsRate,
+  isWorkOrderCompleted,
+  formatWorkOrderForUpload,
+} from '../utils/helpers';
 
 export interface ReconciliationSummary {
   uploadedType: 'work_orders' | 'invoices' | 'timesheet' | 'master';
@@ -13,7 +20,7 @@ export interface ReconciliationSummary {
 }
 
 export interface DbState {
-  workOrders: any[];
+  workOrders: WorkOrder[];
   invoices: Invoice[];
   laborEntries: LaborEntry[];
   laborRateCategories: LaborRateCategory[];
@@ -149,7 +156,7 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
     });
 
     const parsedWorkOrders = (wos || []).map((w: any) => {
-      const isCompleted = w.status === 'Field Complete' || w.status === 'CTCC Completed' || w.status === 'Ready to Bill';
+      const isCompleted = isWorkOrderCompleted(w.status);
       return {
         ...w,
         locate_renewal_date: w.locate_renewal_date || null,
@@ -192,29 +199,7 @@ export const fetchDbState = createAsyncThunk('db/fetchDbState', async () => {
 export const uploadWorkOrdersThunk = createAsyncThunk(
   'db/uploadWorkOrders',
   async (workOrders: any[]) => {
-    const formatted = workOrders.map((wo) => {
-      const isCompleted = wo.status === 'Field Complete' || wo.status === 'CTCC Completed' || wo.status === 'Ready to Bill';
-      return {
-        work_order_number: String(wo.work_order_number).trim(),
-        status: wo.status || 'Work Pending',
-        general_foreman: wo.general_foreman || 'Unassigned GF',
-        foreman: wo.foreman || 'Unassigned Foreman',
-        area: wo.area || deriveArea(wo.address || '', wo.latitude, wo.longitude),
-        address: wo.address || '',
-        latitude: wo.latitude || 29.7604,
-        longitude: wo.longitude || -95.3698,
-        locate_renewal_date: wo.locate_renewal_date || null,
-        date_work_completed: wo.date_work_completed || (isCompleted ? (wo.customer_need_date || '2026-08-15') : null),
-        customer_need_date: wo.customer_need_date || null,
-        locked_gates: !!wo.locked_gates,
-        outage_required: !!wo.outage_required,
-        permitting_needed: !!wo.permitting_needed,
-        switching_required: !!wo.switching_required,
-        traffic_control_needed: !!wo.traffic_control_needed,
-        hydrovac_needed: !!wo.hydrovac_needed,
-        tree_trimming_needed: !!wo.tree_trimming_needed,
-      };
-    });
+    const formatted = workOrders.map((wo) => formatWorkOrderForUpload(wo));
 
     try {
       const deduplicatedWos = deduplicateByKey(formatted, (w) => w.work_order_number);
@@ -344,7 +329,7 @@ export const uploadTimesheetThunk = createAsyncThunk(
     } catch (e: any) {
       console.warn('Supabase connecteam_labor_entries upsert warning, attempting legacy payload fallback:', e);
       try {
-        const legacyFormatted = formatted.map(({ dt_hours, dt_cost, benefits_cost, benefits_rate, start_date, end_date, ...rest }) => rest);
+        const legacyFormatted = formatted.map(({ dt_hours: _dt_hours, dt_cost: _dt_cost, benefits_cost: _benefits_cost, benefits_rate: _benefits_rate, start_date: _start_date, end_date: _end_date, ...rest }) => rest);
         await upsertInChunks('connecteam_labor_entries', legacyFormatted, 'id');
       } catch (fallbackErr) {
         console.error('Supabase connecteam_labor_entries upsert error:', fallbackErr);
@@ -357,29 +342,7 @@ export const uploadTimesheetThunk = createAsyncThunk(
 );
 
 export const uploadJoinedMasterThunk = createAsyncThunk('db/uploadJoinedMaster', async (masterRows: any[]) => {
-  const workOrdersToUpload = masterRows.map((row) => {
-    const isCompleted = row.status === 'Field Complete' || row.status === 'CTCC Completed' || row.status === 'Ready to Bill';
-    return {
-      work_order_number: String(row.work_order_number).trim(),
-      status: row.status || 'Work Pending',
-      general_foreman: row.general_foreman || 'Unassigned GF',
-      foreman: row.foreman || 'Unassigned Foreman',
-      area: row.area || deriveArea(row.address || '', row.latitude, row.longitude),
-      address: row.address || '',
-      latitude: row.latitude || 29.7604,
-      longitude: row.longitude || -95.3698,
-      locate_renewal_date: row.locate_renewal_date || null,
-      date_work_completed: row.date_work_completed || (isCompleted ? (row.customer_need_date || '2026-08-15') : null),
-      customer_need_date: row.customer_need_date || null,
-      locked_gates: !!row.locked_gates,
-      outage_required: !!row.outage_required,
-      permitting_needed: !!row.permitting_needed,
-      switching_required: !!row.switching_required,
-      traffic_control_needed: !!row.traffic_control_needed,
-      hydrovac_needed: !!row.hydrovac_needed,
-      tree_trimming_needed: !!row.tree_trimming_needed,
-    };
-  });
+  const workOrdersToUpload = masterRows.map((row) => formatWorkOrderForUpload(row));
 
   const invoicesToUpload = masterRows
     .filter((row) => row.invoice_number)
@@ -396,7 +359,7 @@ export const uploadJoinedMasterThunk = createAsyncThunk('db/uploadJoinedMaster',
 
   try {
     const dedupedWos = deduplicateByKey(workOrdersToUpload, (w) => w.work_order_number);
-    const remotePayload = dedupedWos.map(({ date_work_completed, ...rest }) => rest);
+    const remotePayload = dedupedWos.map(({ date_work_completed: _date_work_completed, ...rest }) => rest);
     await upsertInChunks('work_orders', remotePayload, 'work_order_number');
 
     let invData: any[] = [];
@@ -407,7 +370,7 @@ export const uploadJoinedMasterThunk = createAsyncThunk('db/uploadJoinedMaster',
     }
 
     return { workOrders: dedupedWos, invoices: invData.length > 0 ? invData : invoicesToUpload };
-  } catch (e) {
+  } catch (_e) {
     return { workOrders: workOrdersToUpload, invoices: invoicesToUpload };
   }
 });

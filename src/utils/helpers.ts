@@ -147,6 +147,37 @@ export const parseHoursToDecimal = (val: any): number => {
   return isNaN(parsed) ? 0 : parsed;
 };
 
+// Check if a work order status represents completed work
+export const isWorkOrderCompleted = (status?: string | null): boolean => {
+  if (!status) return false;
+  return status === 'Field Complete' || status === 'CTCC Completed' || status === 'Ready to Bill';
+};
+
+// Format a work order row for consistent database upload and state ingestion
+export const formatWorkOrderForUpload = (wo: any): WorkOrder => {
+  const isCompleted = isWorkOrderCompleted(wo.status);
+  return {
+    work_order_number: String(wo.work_order_number).trim(),
+    status: wo.status || 'Work Pending',
+    general_foreman: wo.general_foreman || 'Unassigned GF',
+    foreman: wo.foreman || 'Unassigned Foreman',
+    area: wo.area || deriveArea(wo.address || '', wo.latitude, wo.longitude),
+    address: wo.address || '',
+    latitude: typeof wo.latitude === 'number' ? wo.latitude : (parseFloat(wo.latitude) || 29.7604),
+    longitude: typeof wo.longitude === 'number' ? wo.longitude : (parseFloat(wo.longitude) || -95.3698),
+    locate_renewal_date: wo.locate_renewal_date || null,
+    date_work_completed: wo.date_work_completed || (isCompleted ? (wo.customer_need_date || '2026-08-15') : null),
+    customer_need_date: wo.customer_need_date || null,
+    locked_gates: !!wo.locked_gates,
+    outage_required: !!wo.outage_required,
+    permitting_needed: !!wo.permitting_needed,
+    switching_required: !!wo.switching_required,
+    traffic_control_needed: !!wo.traffic_control_needed,
+    hydrovac_needed: !!wo.hydrovac_needed,
+    tree_trimming_needed: !!wo.tree_trimming_needed,
+  };
+};
+
 // Safe coordinate boundaries for Great Houston Area
 export const HOUSTON_BOUNDS = {
   latMin: 29.5,

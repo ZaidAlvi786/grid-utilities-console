@@ -1,163 +1,60 @@
 -- ==============================================================================
--- 1. ADD COLUMN TO EXISTING TABLE (Fixes "column date_work_completed not found")
--- ==============================================================================
-ALTER TABLE IF EXISTS public.work_orders 
-ADD COLUMN IF NOT EXISTS date_work_completed TEXT;
-
--- 2. POPULATE DUMMY COMPLETION DATES FOR COMPLETED WORK ORDERS
-UPDATE public.work_orders 
-SET date_work_completed = COALESCE(customer_need_date, '2026-08-15')
-WHERE status IN ('Field Complete', 'CTCC Completed', 'Ready to Bill') 
-  AND (date_work_completed IS NULL OR date_work_completed = '');
-
--- ==============================================================================
--- 3. CREATE ANY MISSING TABLES & ENABLE PUBLIC READ/WRITE ACCESS
+-- POWER GRID UTILITIES CONSOLE: PRODUCTION DATABASE SECURITY & PERFORMANCE PATCH
+-- File: supabase_schema_SECURITY_FIX.sql
+-- Run this migration in the Supabase SQL Editor.
 -- ==============================================================================
 
--- Create Invoices Table if not exists
-CREATE TABLE IF NOT EXISTS public.invoices (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    invoice_number TEXT NOT NULL UNIQUE,
-    work_order_number TEXT,
-    -- Statuses: 'Approved', 'Unapproved', 'Draft', 'Pending Approval', 'Voided', 'Disputed' (or any custom status)
-    status TEXT NOT NULL DEFAULT 'Unapproved',
-    po_number TEXT DEFAULT '',
-    total NUMERIC NOT NULL DEFAULT 0,
-    created_date TEXT,
-    unanswered_comments BOOLEAN DEFAULT FALSE,
-    dispute_reason TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- ------------------------------------------------------------------------------
+-- 1. POSTGRES CHECK CONSTRAINTS (Financial Integrity Layer)
+-- ------------------------------------------------------------------------------
 
--- Create Connecteam Labor Entries Table if not exists
-CREATE TABLE IF NOT EXISTS public.connecteam_labor_entries (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    work_order_number TEXT NOT NULL,
-    employee_name TEXT NOT NULL,
-    shift_date TEXT NOT NULL,
-    clock_in TEXT,
-    clock_out TEXT,
-    shift_hours NUMERIC NOT NULL DEFAULT 0,
-    hourly_rate NUMERIC NOT NULL DEFAULT 0,
-    ot_hours NUMERIC NOT NULL DEFAULT 0,
-    ot_cost NUMERIC NOT NULL DEFAULT 0,
-    dt_hours NUMERIC NOT NULL DEFAULT 0,
-    dt_cost NUMERIC NOT NULL DEFAULT 0,
-    benefits_cost NUMERIC NOT NULL DEFAULT 0,
-    benefits_rate NUMERIC NOT NULL DEFAULT 0,
-    line_labor_cost NUMERIC NOT NULL DEFAULT 0,
-    role_category TEXT NOT NULL DEFAULT 'unclassified',
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Ensure OT, DT, and Benefits columns exist on existing table instances
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS ot_hours NUMERIC NOT NULL DEFAULT 0;
-
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS ot_cost NUMERIC NOT NULL DEFAULT 0;
-
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS dt_hours NUMERIC NOT NULL DEFAULT 0;
-
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS dt_cost NUMERIC NOT NULL DEFAULT 0;
-
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS benefits_cost NUMERIC NOT NULL DEFAULT 0;
-
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS benefits_rate NUMERIC NOT NULL DEFAULT 0;
-
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS start_date TEXT;
-
-ALTER TABLE IF EXISTS public.connecteam_labor_entries 
-ADD COLUMN IF NOT EXISTS end_date TEXT;
-
--- Create Labor Rate Categories Table if not exists
-CREATE TABLE IF NOT EXISTS public.labor_rate_categories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    category_name TEXT NOT NULL UNIQUE,
-    standard_rate NUMERIC NOT NULL,
-    ot_rate NUMERIC,
-    dt_rate NUMERIC,
-    benefits_rate NUMERIC,
-    match_tolerance NUMERIC NOT NULL DEFAULT 0.20,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Ensure ot_rate, dt_rate, and benefits_rate columns exist on labor_rate_categories
-ALTER TABLE IF EXISTS public.labor_rate_categories
-ADD COLUMN IF NOT EXISTS ot_rate NUMERIC,
-ADD COLUMN IF NOT EXISTS dt_rate NUMERIC,
-ADD COLUMN IF NOT EXISTS benefits_rate NUMERIC;
-
--- Create Expense Overrides Table if not exists
-CREATE TABLE IF NOT EXISTS public.expense_overrides (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    filter_fingerprint TEXT NOT NULL UNIQUE,
-    add_amount NUMERIC NOT NULL DEFAULT 0,
-    remove_amount NUMERIC NOT NULL DEFAULT 0,
-    profit_margin_override NUMERIC,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Insert Default Labor Rate Categories (7 standard roles with base wages, OT, DT, and benefits)
-INSERT INTO public.labor_rate_categories (category_name, standard_rate, ot_rate, dt_rate, benefits_rate, match_tolerance)
-VALUES 
-    ('General Foreman', 58.49, 87.74, 116.98, 25.22, 0.20),
-    ('Foreman', 57.30, 85.95, 114.60, 24.90, 0.20),
-    ('Journeyman', 53.72, 80.58, 107.44, 23.89, 0.20),
-    ('Pole Truck Driver', 40.23, 60.35, 80.46, 18.56, 0.20),
-    ('Apprentice', 37.60, 56.40, 75.20, 15.48, 0.20),
-    ('Groundman', 26.94, 40.41, 53.88, 14.66, 0.20),
-    ('Pole Truck Helper', 15.00, 22.50, 30.00, 9.48, 0.20)
-ON CONFLICT (category_name) DO UPDATE 
-SET standard_rate = EXCLUDED.standard_rate,
-    ot_rate = EXCLUDED.ot_rate,
-    dt_rate = EXCLUDED.dt_rate,
-    benefits_rate = EXCLUDED.benefits_rate,
-    match_tolerance = EXCLUDED.match_tolerance;
-
--- ==============================================================================
--- FINANCIAL INTEGRITY LAYER: POSTGRES CHECK CONSTRAINTS
--- ==============================================================================
+-- Invoices: Total amount must be non-negative
 ALTER TABLE IF EXISTS public.invoices
 DROP CONSTRAINT IF EXISTS check_invoices_total_positive;
+
 ALTER TABLE IF EXISTS public.invoices
 ADD CONSTRAINT check_invoices_total_positive CHECK (total >= 0);
 
+-- Invoices: Status must be one of the known valid states
 ALTER TABLE IF EXISTS public.invoices
 DROP CONSTRAINT IF EXISTS check_invoices_status_valid;
+
 ALTER TABLE IF EXISTS public.invoices
 ADD CONSTRAINT check_invoices_status_valid CHECK (
     status IN ('Approved', 'Unapproved', 'Draft', 'Pending Approval', 'Voided', 'Disputed')
 );
 
+-- Connecteam Labor Entries: Rates and hours must be non-negative
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 DROP CONSTRAINT IF EXISTS check_labor_hourly_rate_positive;
+
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 ADD CONSTRAINT check_labor_hourly_rate_positive CHECK (hourly_rate >= 0);
 
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 DROP CONSTRAINT IF EXISTS check_labor_shift_hours_positive;
+
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 ADD CONSTRAINT check_labor_shift_hours_positive CHECK (shift_hours >= 0);
 
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 DROP CONSTRAINT IF EXISTS check_labor_ot_hours_positive;
+
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 ADD CONSTRAINT check_labor_ot_hours_positive CHECK (ot_hours >= 0);
 
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 DROP CONSTRAINT IF EXISTS check_labor_dt_hours_positive;
+
 ALTER TABLE IF EXISTS public.connecteam_labor_entries
 ADD CONSTRAINT check_labor_dt_hours_positive CHECK (dt_hours >= 0);
 
--- ==============================================================================
--- SERVER-SIDE AGGREGATION VIEW
--- ==============================================================================
+
+-- ------------------------------------------------------------------------------
+-- 2. SERVER-SIDE AGGREGATION VIEWS (Performance Optimization Layer)
+-- ------------------------------------------------------------------------------
+
+-- Profit Margin & Reconciliation View: Pre-computes financial rollups on Postgres
 CREATE OR REPLACE VIEW public.v_work_order_profit_margin AS
 SELECT 
     w.work_order_number,
@@ -180,25 +77,37 @@ SELECT
     END AS profit_margin_pct
 FROM public.work_orders w
 LEFT JOIN (
-    SELECT work_order_number, SUM(total) AS total_invoiced, COUNT(*) AS invoice_count
+    SELECT 
+        work_order_number, 
+        SUM(total) AS total_invoiced,
+        COUNT(*) AS invoice_count
     FROM public.invoices
     GROUP BY work_order_number
 ) inv ON w.work_order_number = inv.work_order_number
 LEFT JOIN (
-    SELECT work_order_number, SUM(line_labor_cost) AS total_labor_cost, SUM(shift_hours) AS total_shift_hours
+    SELECT 
+        work_order_number, 
+        SUM(line_labor_cost) AS total_labor_cost, 
+        SUM(shift_hours) AS total_shift_hours
     FROM public.connecteam_labor_entries
     GROUP BY work_order_number
 ) lab ON w.work_order_number = lab.work_order_number;
 
--- ==============================================================================
--- HARDENED ROW LEVEL SECURITY (RLS) POLICIES
--- ==============================================================================
+
+-- ------------------------------------------------------------------------------
+-- 3. HARDENED ROW LEVEL SECURITY (RLS) POLICIES
+-- Uses authenticated JWT claim: (auth.jwt() -> 'user_metadata' ->> 'role')
+-- Rejecting anon / unauthenticated requests unconditionally.
+-- ------------------------------------------------------------------------------
+
+-- Enable RLS on all tables
 ALTER TABLE public.work_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.connecteam_labor_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.labor_rate_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expense_overrides ENABLE ROW LEVEL SECURITY;
 
+-- Helper macro function to extract role from Supabase Auth JWT
 CREATE OR REPLACE FUNCTION public.current_user_role()
 RETURNS TEXT AS $$
 BEGIN
@@ -212,86 +121,117 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
--- Work Orders
+
+-- 3.1 WORK ORDERS
 DROP POLICY IF EXISTS "Allow public all work_orders" ON public.work_orders;
 DROP POLICY IF EXISTS "Supervisor full work_orders" ON public.work_orders;
 DROP POLICY IF EXISTS "Admin read write work_orders" ON public.work_orders;
 DROP POLICY IF EXISTS "Employee read work_orders" ON public.work_orders;
 
+-- Supervisor: Full access
 CREATE POLICY "Supervisor full work_orders" ON public.work_orders
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Supervisor')
     WITH CHECK (public.current_user_role() = 'Supervisor');
 
+-- Admin: Read, Insert, Update
 CREATE POLICY "Admin read write work_orders" ON public.work_orders
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Admin')
     WITH CHECK (public.current_user_role() = 'Admin');
 
+-- Employee: Read only
 CREATE POLICY "Employee read work_orders" ON public.work_orders
-    FOR SELECT TO authenticated
+    FOR SELECT
+    TO authenticated
     USING (public.current_user_role() = 'Employee');
 
--- Invoices (Employees Denied)
+
+-- 3.2 INVOICES (Financial Protection: Employees have zero access)
 DROP POLICY IF EXISTS "Allow public all invoices" ON public.invoices;
 DROP POLICY IF EXISTS "Supervisor full invoices" ON public.invoices;
 DROP POLICY IF EXISTS "Admin read write invoices" ON public.invoices;
 
+-- Supervisor: Full access
 CREATE POLICY "Supervisor full invoices" ON public.invoices
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Supervisor')
     WITH CHECK (public.current_user_role() = 'Supervisor');
 
+-- Admin: Read, Insert, Update
 CREATE POLICY "Admin read write invoices" ON public.invoices
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Admin')
     WITH CHECK (public.current_user_role() = 'Admin');
 
--- Connecteam Labor Entries
+-- (No policy for Employee = Deny by default)
+
+
+-- 3.3 CONNECTEAM LABOR ENTRIES
 DROP POLICY IF EXISTS "Allow public all connecteam_labor_entries" ON public.connecteam_labor_entries;
 DROP POLICY IF EXISTS "Supervisor full labor_entries" ON public.connecteam_labor_entries;
 DROP POLICY IF EXISTS "Admin read write labor_entries" ON public.connecteam_labor_entries;
 DROP POLICY IF EXISTS "Employee read labor_entries" ON public.connecteam_labor_entries;
 
+-- Supervisor: Full access
 CREATE POLICY "Supervisor full labor_entries" ON public.connecteam_labor_entries
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Supervisor')
     WITH CHECK (public.current_user_role() = 'Supervisor');
 
+-- Admin: Read, Insert, Update
 CREATE POLICY "Admin read write labor_entries" ON public.connecteam_labor_entries
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Admin')
     WITH CHECK (public.current_user_role() = 'Admin');
 
+-- Employee: Read only
 CREATE POLICY "Employee read labor_entries" ON public.connecteam_labor_entries
-    FOR SELECT TO authenticated
+    FOR SELECT
+    TO authenticated
     USING (public.current_user_role() = 'Employee');
 
--- Labor Rate Categories
+
+-- 3.4 LABOR RATE CATEGORIES
 DROP POLICY IF EXISTS "Allow public all labor_rate_categories" ON public.labor_rate_categories;
 DROP POLICY IF EXISTS "Supervisor full labor_rate_categories" ON public.labor_rate_categories;
 DROP POLICY IF EXISTS "Admin Employee read labor_rate_categories" ON public.labor_rate_categories;
 
+-- Supervisor: Full management
 CREATE POLICY "Supervisor full labor_rate_categories" ON public.labor_rate_categories
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Supervisor')
     WITH CHECK (public.current_user_role() = 'Supervisor');
 
+-- Admin & Employee: Read only
 CREATE POLICY "Admin Employee read labor_rate_categories" ON public.labor_rate_categories
-    FOR SELECT TO authenticated
+    FOR SELECT
+    TO authenticated
     USING (public.current_user_role() IN ('Admin', 'Employee'));
 
--- Expense Overrides
+
+-- 3.5 EXPENSE OVERRIDES (Financial Overrides: Supervisor & Admin only)
 DROP POLICY IF EXISTS "Allow public all expense_overrides" ON public.expense_overrides;
 DROP POLICY IF EXISTS "Supervisor full expense_overrides" ON public.expense_overrides;
 DROP POLICY IF EXISTS "Admin read write expense_overrides" ON public.expense_overrides;
 
 CREATE POLICY "Supervisor full expense_overrides" ON public.expense_overrides
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Supervisor')
     WITH CHECK (public.current_user_role() = 'Supervisor');
 
 CREATE POLICY "Admin read write expense_overrides" ON public.expense_overrides
-    FOR ALL TO authenticated
+    FOR ALL
+    TO authenticated
     USING (public.current_user_role() = 'Admin')
     WITH CHECK (public.current_user_role() = 'Admin');
+
+-- (No policy for Employee = Deny by default)

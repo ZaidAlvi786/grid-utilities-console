@@ -193,8 +193,8 @@ export const Filters: React.FC = () => {
                 {filters.foreman.length === 0
                   ? 'Select Foreman'
                   : filters.foreman.length === foremanList.length
-                  ? 'All foremen selected'
-                  : `${filters.foreman.length} foremen selected`}
+                    ? 'All foremen selected'
+                    : `${filters.foreman.length} foremen selected`}
               </span>
               <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0 ml-1" />
             </button>
@@ -207,7 +207,7 @@ export const Filters: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={filters.foreman.length === foremanList.length && foremanList.length > 0}
-                    onChange={() => {}}
+                    onChange={() => { }}
                     className="rounded text-blue-600 focus:ring-blue-500 pointer-events-none"
                   />
                   Select All
@@ -221,7 +221,7 @@ export const Filters: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={filters.foreman.includes(fore)}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       className="rounded text-blue-600 focus:ring-blue-500 pointer-events-none"
                     />
                     <span className="truncate">{fore}</span>
@@ -254,18 +254,17 @@ export const Filters: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsWoOpen(!isWoOpen)}
-            className={`w-full px-3 py-1.5 text-sm bg-white border ${
-              filters.workOrderNumbers.length > 0 ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-300'
-            } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 flex justify-between items-center cursor-pointer font-medium text-left`}
+            className={`w-full px-3 py-1.5 text-sm bg-white border ${filters.workOrderNumbers.length > 0 ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-300'
+              } rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 flex justify-between items-center cursor-pointer font-medium text-left`}
           >
             <span className="truncate">
               {filters.workOrderNumbers.length === 0
                 ? 'All Work Orders'
                 : filters.workOrderNumbers.length === 1
-                ? `#${filters.workOrderNumbers[0]}`
-                : filters.workOrderNumbers.length === woList.length && woList.length > 0
-                ? 'All Work Orders selected'
-                : `${filters.workOrderNumbers.length} WOs selected`}
+                  ? `#${filters.workOrderNumbers[0]}`
+                  : filters.workOrderNumbers.length === woList.length && woList.length > 0
+                    ? 'All Work Orders selected'
+                    : `${filters.workOrderNumbers.length} WOs selected`}
             </span>
             <div className="flex items-center gap-1 flex-shrink-0 ml-1">
               {filters.workOrderNumbers.length > 0 && (
@@ -325,15 +324,14 @@ export const Filters: React.FC = () => {
                       <div
                         key={woNum}
                         onClick={() => handleWoToggle(woNum)}
-                        className={`flex items-center justify-between p-1.5 hover:bg-blue-50/70 rounded cursor-pointer text-xs transition-colors ${
-                          isChecked ? 'bg-blue-50/40 text-blue-900 font-semibold' : 'text-slate-700'
-                        }`}
+                        className={`flex items-center justify-between p-1.5 hover:bg-blue-50/70 rounded cursor-pointer text-xs transition-colors ${isChecked ? 'bg-blue-50/40 text-blue-900 font-semibold' : 'text-slate-700'
+                          }`}
                       >
                         <div className="flex items-center gap-2 truncate">
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => {}}
+                            onChange={() => { }}
                             className="rounded text-blue-600 focus:ring-blue-500 pointer-events-none"
                           />
                           <span className="font-mono text-[11px] truncate">#{woNum}</span>
@@ -349,7 +347,7 @@ export const Filters: React.FC = () => {
       </div>
 
       {/* Invoice Status */}
-      <div className="flex flex-col gap-1">
+      {/* <div className="flex flex-col gap-1">
         <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Invoice Status</label>
         <select
           value={filters.status}
@@ -364,7 +362,7 @@ export const Filters: React.FC = () => {
           <option value="Voided">Voided</option>
           <option value="Disputed">Disputed</option>
         </select>
-      </div>
+      </div> */}
 
       {/* Action Buttons: Sync (Left) and Reset */}
       <div className="ml-auto flex items-center gap-2.5 relative">

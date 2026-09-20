@@ -213,13 +213,14 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
           }
 
           if (uploadType === 'invoices') {
-            if (normalizedKey === 'Invoice #') normalizedKey = 'invoice_number';
-            else if (normalizedKey === 'Created Date') normalizedKey = 'created_date';
-            else if (normalizedKey === 'Status') normalizedKey = 'status';
-            else if (normalizedKey === 'PO #') normalizedKey = 'po_number';
-            else if (normalizedKey === 'Total') normalizedKey = 'total';
-            else if (normalizedKey === 'Unanswered Comments') normalizedKey = 'unanswered_comments';
-            else if (normalizedKey === 'Dispute Reason') normalizedKey = 'dispute_reason';
+            const lowerKey = normalizedKey.toLowerCase();
+            if (normalizedKey === 'Invoice #' || lowerKey === 'invoice_number' || lowerKey === 'invoice #' || lowerKey === 'invoice number' || lowerKey === 'invoice') normalizedKey = 'invoice_number';
+            else if (normalizedKey === 'Created Date' || lowerKey === 'created date' || lowerKey === 'created_date' || lowerKey === 'date') normalizedKey = 'created_date';
+            else if (normalizedKey === 'Status' || lowerKey === 'status' || lowerKey === 'invoice status') normalizedKey = 'status';
+            else if (normalizedKey === 'PO #' || lowerKey === 'po #' || lowerKey === 'po_number' || lowerKey === 'po number' || lowerKey === 'po') normalizedKey = 'po_number';
+            else if (normalizedKey === 'Total' || lowerKey === 'total' || lowerKey === 'amount' || lowerKey === 'invoice total' || lowerKey === 'invoice amount' || lowerKey === 'total amount') normalizedKey = 'total';
+            else if (normalizedKey === 'Unanswered Comments' || lowerKey === 'unanswered comments' || lowerKey === 'unanswered_comments') normalizedKey = 'unanswered_comments';
+            else if (normalizedKey === 'Dispute Reason' || lowerKey === 'dispute reason' || lowerKey === 'dispute_reason') normalizedKey = 'dispute_reason';
           }
 
           if (uploadType === 'timesheet') {
