@@ -21,11 +21,11 @@ export interface TeamMember {
   role: UserRole;
   status: 'Active' | 'Invited' | 'Pending';
   invitedAt: string;
-  tempPassword?: string;
 }
 
 interface AuthState {
   currentUser: UserProfile | null;
+  previewRole: UserRole | null; // UI-only persona preview for Supervisors; never touches currentUser or localStorage
   isAuthenticated: boolean;
   isLoading: boolean;
   authError: string | null;
@@ -33,101 +33,38 @@ interface AuthState {
   inviteSuccessMessage: string | null;
 }
 
-// Initial default accounts for seamless operation & demo
-// Supervisor is the Owner with top-level system authority
-const DEFAULT_SUPERVISOR: UserProfile = {
-  id: 'sup-001',
-  email: 'samkanalytics@gmail.com',
-  name: 'Samk Analytics (Owner)',
-  role: 'Supervisor',
-  createdAt: '2026-08-01',
+// Generate cryptographically secure random password with adequate entropy (minimum 18 chars, mixed classes)
+export const generateSecureRandomPassword = (length: number = 18): string => {
+  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+  const array = new Uint32Array(length);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(array);
+  } else {
+    for (let i = 0; i < length; i++) {
+      array[i] = Math.floor(Math.random() * 0xffffffff);
+    }
+  }
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += charset[array[i] % charset.length];
+  }
+  return result;
 };
 
-const DEFAULT_ADMIN: UserProfile = {
-  id: 'adm-002',
-  email: 'sarah.admin@gridutil.com',
-  name: 'Sarah Jenkins',
-  role: 'Admin',
-  createdAt: '2026-08-10',
-};
-
-const DEFAULT_EMPLOYEE: UserProfile = {
-  id: 'emp-003',
-  email: 'david.field@gridutil.com',
-  name: 'David Miller',
-  role: 'Employee',
-  createdAt: '2026-08-15',
-};
-
-const INITIAL_TEAM_MEMBERS: TeamMember[] = [
-  {
-    id: 'sup-001',
-    name: 'Samk Analytics (Owner)',
-    email: 'samkanalytics@gmail.com',
-    role: 'Supervisor',
-    status: 'Active',
-    invitedAt: '2026-08-01',
-  },
-  {
-    id: 'adm-002',
-    name: 'Sarah Jenkins',
-    email: 'sarah.admin@gridutil.com',
-    role: 'Admin',
-    status: 'Active',
-    invitedAt: '2026-08-10',
-  },
-  {
-    id: 'emp-003',
-    name: 'David Miller',
-    email: 'david.field@gridutil.com',
-    role: 'Employee',
-    status: 'Active',
-    invitedAt: '2026-08-15',
-  },
-];
-
-// Helper to get local stored auth or fallback, with auto-migration from previous email
+// Retrieve persisted session without defaulting to any hardcoded superuser
 const getSavedAuth = (): { user: UserProfile | null; team: TeamMember[] } => {
   try {
     const savedUserRaw = localStorage.getItem('grid_auth_user');
     const savedTeamRaw = localStorage.getItem('grid_team_members');
 
-    let user: UserProfile = savedUserRaw ? JSON.parse(savedUserRaw) : DEFAULT_SUPERVISOR;
-    let team: TeamMember[] = savedTeamRaw ? JSON.parse(savedTeamRaw) : INITIAL_TEAM_MEMBERS;
-
-    // Migrate any legacy muhammadumar009@gmail.com references to samkanalytics@gmail.com
-    if (user && user.email === 'muhammadumar009@gmail.com') {
-      user = {
-        ...user,
-        email: 'samkanalytics@gmail.com',
-        name: user.name === 'Muhammad Umar' ? 'Samk Analytics (Owner)' : user.name,
-      };
-      localStorage.setItem('grid_auth_user', JSON.stringify(user));
-    }
-
-    if (Array.isArray(team)) {
-      let migrated = false;
-      team = team.map((m) => {
-        if (m.email === 'muhammadumar009@gmail.com') {
-          migrated = true;
-          return {
-            ...m,
-            email: 'samkanalytics@gmail.com',
-            name: m.name === 'Muhammad Umar' ? 'Samk Analytics (Owner)' : m.name,
-          };
-        }
-        return m;
-      });
-      if (migrated) {
-        localStorage.setItem('grid_team_members', JSON.stringify(team));
-      }
-    }
+    const user: UserProfile | null = savedUserRaw ? JSON.parse(savedUserRaw) : null;
+    const team: TeamMember[] = savedTeamRaw ? JSON.parse(savedTeamRaw) : [];
 
     return { user, team };
   } catch {
     return {
-      user: DEFAULT_SUPERVISOR,
-      team: INITIAL_TEAM_MEMBERS,
+      user: null,
+      team: [],
     };
   }
 };
@@ -136,6 +73,7 @@ const initialAuth = getSavedAuth();
 
 const initialState: AuthState = {
   currentUser: initialAuth.user,
+  previewRole: null,
   isAuthenticated: !!initialAuth.user,
   isLoading: false,
   authError: null,
@@ -143,105 +81,62 @@ const initialState: AuthState = {
   inviteSuccessMessage: null,
 };
 
-// Login Thunk
+// Verify active Supabase session
+export const checkSessionThunk = createAsyncThunk('auth/checkSession', async () => {
+  try {
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user) {
+      const u = data.session.user;
+      const userMeta = u.user_metadata || {};
+      const userRole: UserRole = (userMeta.role as UserRole) || 'Employee';
+      const user: UserProfile = {
+        id: u.id,
+        email: u.email || '',
+        name: userMeta.name || userMeta.full_name || u.email?.split('@')[0] || 'User',
+        role: userRole,
+        createdAt: u.created_at,
+        lastLogin: new Date().toISOString(),
+      };
+      localStorage.setItem('grid_auth_user', JSON.stringify(user));
+      return user;
+    }
+  } catch (e) {
+    console.warn('Session check exception:', e);
+  }
+  return null;
+});
+
+// Login Thunk: Authenticates exclusively through Supabase Auth
 export const loginThunk = createAsyncThunk(
   'auth/login',
   async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. Check default Supervisor (Owner) credentials
-    if (
-      (cleanEmail === 'samkanalytics@gmail.com' || cleanEmail === 'muhammadumar009@gmail.com') &&
-      password === 'Admin@123'
-    ) {
-      const user: UserProfile = {
-        ...DEFAULT_SUPERVISOR,
-        lastLogin: new Date().toISOString(),
-      };
-      localStorage.setItem('grid_auth_user', JSON.stringify(user));
-      return user;
-    }
-
-    // 2. Check default Admin credentials
-    if (
-      cleanEmail === 'sarah.admin@gridutil.com' &&
-      (password === 'Admin@123' || password === 'admin123')
-    ) {
-      const user: UserProfile = {
-        ...DEFAULT_ADMIN,
-        lastLogin: new Date().toISOString(),
-      };
-      localStorage.setItem('grid_auth_user', JSON.stringify(user));
-      return user;
-    }
-
-    // 3. Check default Employee credentials
-    if (
-      cleanEmail === 'david.field@gridutil.com' &&
-      (password === 'Admin@123' || password === 'employee123')
-    ) {
-      const user: UserProfile = {
-        ...DEFAULT_EMPLOYEE,
-        lastLogin: new Date().toISOString(),
-      };
-      localStorage.setItem('grid_auth_user', JSON.stringify(user));
-      return user;
-    }
-
-    // 4. Check locally invited team members
-    try {
-      const savedTeamRaw = localStorage.getItem('grid_team_members');
-      if (savedTeamRaw) {
-        const team: TeamMember[] = JSON.parse(savedTeamRaw);
-        const match = team.find((m) => m.email.toLowerCase() === cleanEmail);
-        if (
-          match &&
-          (!match.tempPassword || match.tempPassword === password || password === 'Admin@123')
-        ) {
-          const user: UserProfile = {
-            id: match.id,
-            email: match.email,
-            name: match.name,
-            role: match.role,
-            createdAt: match.invitedAt,
-            lastLogin: new Date().toISOString(),
-          };
-          localStorage.setItem('grid_auth_user', JSON.stringify(user));
-          return user;
-        }
-      }
-    } catch {
-      // Continue to Supabase check
-    }
-
-    // 5. Check with Supabase Auth
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password,
       });
 
-      if (!error && data?.user) {
-        const userMeta = data.user.user_metadata || {};
-        const userRole: UserRole =
-          (userMeta.role as UserRole) ||
-          (cleanEmail === 'samkanalytics@gmail.com' ? 'Supervisor' : 'Employee');
-        const user: UserProfile = {
-          id: data.user.id,
-          email: data.user.email || cleanEmail,
-          name: userMeta.name || userMeta.full_name || cleanEmail.split('@')[0],
-          role: userRole,
-          createdAt: data.user.created_at,
-          lastLogin: new Date().toISOString(),
-        };
-        localStorage.setItem('grid_auth_user', JSON.stringify(user));
-        return user;
+      if (error || !data?.user) {
+        return rejectWithValue(error?.message || 'Invalid email or password. Please verify your credentials.');
       }
-    } catch (err: any) {
-      console.warn('Supabase signin attempt exception:', err);
-    }
 
-    return rejectWithValue('Invalid email or password. Please verify your credentials.');
+      const userMeta = data.user.user_metadata || {};
+      const userRole: UserRole = (userMeta.role as UserRole) || 'Employee';
+      const user: UserProfile = {
+        id: data.user.id,
+        email: data.user.email || cleanEmail,
+        name: userMeta.name || userMeta.full_name || cleanEmail.split('@')[0],
+        role: userRole,
+        createdAt: data.user.created_at,
+        lastLogin: new Date().toISOString(),
+      };
+      localStorage.setItem('grid_auth_user', JSON.stringify(user));
+      return user;
+    } catch (err: any) {
+      return rejectWithValue(err.message || 'Authentication service error. Please try again.');
+    }
   }
 );
 
@@ -312,7 +207,7 @@ export const updatePasswordThunk = createAsyncThunk(
       });
 
       if (error) {
-        console.warn('Supabase update password notice:', error.message);
+        return rejectWithValue(error.message);
       }
       return true;
     } catch (err: any) {
@@ -321,7 +216,7 @@ export const updatePasswordThunk = createAsyncThunk(
   }
 );
 
-// Invite Team Member Thunk
+// Invite Team Member Thunk: Uses cryptographically secure random password and Supabase signup/invite flow
 export const inviteTeamMemberThunk = createAsyncThunk(
   'auth/inviteTeamMember',
   async (
@@ -329,8 +224,7 @@ export const inviteTeamMemberThunk = createAsyncThunk(
       name,
       email,
       role,
-      tempPassword,
-    }: { name: string; email: string; role: UserRole; tempPassword?: string },
+    }: { name: string; email: string; role: UserRole },
     { getState, rejectWithValue }
   ) => {
     try {
@@ -342,39 +236,33 @@ export const inviteTeamMemberThunk = createAsyncThunk(
         return rejectWithValue(emailValidation);
       }
 
-      const generatedPassword = tempPassword || `Grid@${Math.floor(1000 + Math.random() * 9000)}`;
+      const securePassword = generateSecureRandomPassword(20);
 
-      // 1. Attempt Supabase Auth email invite / sign up
-      let supabaseSuccess = false;
+      // Attempt Supabase Auth invite / sign up without exposing password to Redux
       try {
         const { error: signUpError } = await supabase.auth.signUp({
           email: cleanEmail,
-          password: generatedPassword,
+          password: securePassword,
           options: {
             data: {
               name,
               role,
-              password: generatedPassword,
-              temp_password: generatedPassword,
-              initial_password: generatedPassword,
             },
             emailRedirectTo:
               typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
           },
         });
 
-        if (!signUpError) {
-          supabaseSuccess = true;
-        } else {
-          // If user already exists in auth, send reset/invite link
-          await supabase.auth.resetPasswordForEmail(cleanEmail);
-          supabaseSuccess = true;
+        if (signUpError) {
+          // If already registered, trigger password reset flow to send secure login link
+          await supabase.auth.resetPasswordForEmail(cleanEmail, {
+            redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
+          });
         }
       } catch (e) {
         console.warn('Supabase invite notice:', e);
       }
 
-      // 2. Create the team member record
       const memberId = `user-${Date.now()}`;
       const newMember: TeamMember = {
         id: memberId,
@@ -383,10 +271,9 @@ export const inviteTeamMemberThunk = createAsyncThunk(
         role,
         status: 'Active',
         invitedAt: new Date().toISOString().split('T')[0],
-        tempPassword: generatedPassword,
       };
 
-      // 3. Upsert to Supabase public.profiles table
+      // Upsert to Supabase public.profiles table
       try {
         await supabase.from('profiles').upsert({
           id: memberId,
@@ -409,8 +296,6 @@ export const inviteTeamMemberThunk = createAsyncThunk(
       return {
         member: newMember,
         team: updatedTeam,
-        supabaseSent: supabaseSuccess,
-        tempPassword: generatedPassword,
       };
     } catch (err: any) {
       return rejectWithValue(err.message || 'Failed to send invitation');
@@ -427,7 +312,7 @@ export const updateTeamMemberRoleThunk = createAsyncThunk(
   ) => {
     try {
       const state = getState() as { auth: AuthState };
-      const member = state.auth.teamMembers.find(m => m.id === memberId);
+      const member = state.auth.teamMembers.find((m) => m.id === memberId);
       if (!member) throw new Error('Member not found');
 
       // Update in Supabase profiles table
@@ -440,7 +325,7 @@ export const updateTeamMemberRoleThunk = createAsyncThunk(
         console.warn('Supabase update role notice:', e);
       }
 
-      const updatedTeam = state.auth.teamMembers.map(m =>
+      const updatedTeam = state.auth.teamMembers.map((m) =>
         m.id === memberId ? { ...m, role: newRole } : m
       );
       localStorage.setItem('grid_team_members', JSON.stringify(updatedTeam));
@@ -477,7 +362,6 @@ export const removeTeamMemberThunk = createAsyncThunk(
     try {
       const cleanEmail = email.trim().toLowerCase();
 
-      // Delete from Supabase profiles table
       try {
         await supabase
           .from('profiles')
@@ -489,7 +373,7 @@ export const removeTeamMemberThunk = createAsyncThunk(
 
       const state = getState() as { auth: AuthState };
       const updatedTeam = state.auth.teamMembers.filter(
-        m => m.id !== memberId && m.email.toLowerCase() !== cleanEmail
+        (m) => m.id !== memberId && m.email.toLowerCase() !== cleanEmail
       );
       localStorage.setItem('grid_team_members', JSON.stringify(updatedTeam));
 
@@ -508,11 +392,14 @@ export const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    setRolePreview: (state, action: PayloadAction<UserRole>) => {
-      if (state.currentUser) {
-        state.currentUser.role = action.payload;
-        localStorage.setItem('grid_auth_user', JSON.stringify(state.currentUser));
+    // UI-only persona preview for Supervisors (testing views); NEVER alters currentUser, NEVER persists
+    setUiPreviewRole: (state, action: PayloadAction<UserRole | null>) => {
+      if (state.currentUser?.role === 'Supervisor') {
+        state.previewRole = action.payload;
       }
+    },
+    clearUiPreviewRole: (state) => {
+      state.previewRole = null;
     },
     setCurrentUser: (state, action: PayloadAction<UserProfile>) => {
       state.currentUser = action.payload;
@@ -521,6 +408,7 @@ export const authSlice = createSlice({
     },
     logout: (state) => {
       state.currentUser = null;
+      state.previewRole = null;
       state.isAuthenticated = false;
       state.authError = null;
       localStorage.removeItem('grid_auth_user');
@@ -536,6 +424,14 @@ export const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
+    // Session Check
+    builder.addCase(checkSessionThunk.fulfilled, (state, action) => {
+      if (action.payload) {
+        state.currentUser = action.payload;
+        state.isAuthenticated = true;
+      }
+    });
+
     // Login
     builder
       .addCase(loginThunk.pending, (state) => {
@@ -546,6 +442,7 @@ export const authSlice = createSlice({
         state.isLoading = false;
         state.isAuthenticated = true;
         state.currentUser = action.payload;
+        state.previewRole = null;
         state.authError = null;
       })
       .addCase(loginThunk.rejected, (state, action) => {
@@ -559,7 +456,7 @@ export const authSlice = createSlice({
       state.teamMembers = action.payload.team;
     });
 
-    // Invite Member
+    // Invite Member (no plaintext password in state)
     builder
       .addCase(inviteTeamMemberThunk.pending, (state) => {
         state.isLoading = true;
@@ -567,7 +464,7 @@ export const authSlice = createSlice({
       .addCase(inviteTeamMemberThunk.fulfilled, (state, action) => {
         state.isLoading = false;
         state.teamMembers = action.payload.team;
-        state.inviteSuccessMessage = `Invitation sent to ${action.payload.member.email}! Temporary password: ${action.payload.tempPassword}`;
+        state.inviteSuccessMessage = `Invitation sent to ${action.payload.member.email}. An access invitation has been dispatched.`;
       })
       .addCase(inviteTeamMemberThunk.rejected, (state, action) => {
         state.isLoading = false;
@@ -589,5 +486,13 @@ export const authSlice = createSlice({
   },
 });
 
-export const { setRolePreview, setCurrentUser, logout, clearAuthError, clearInviteMessage } = authSlice.actions;
+export const {
+  setUiPreviewRole,
+  clearUiPreviewRole,
+  setCurrentUser,
+  logout,
+  clearAuthError,
+  clearInviteMessage,
+} = authSlice.actions;
+
 export default authSlice.reducer;

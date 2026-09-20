@@ -22,8 +22,8 @@ export const LoginPage: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { isLoading, authError } = useSelector((state: RootState) => state.auth);
 
-  const [email, setEmail] = useState('samkanalytics@gmail.com');
-  const [password, setPassword] = useState('Admin@123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Field validation states
@@ -75,15 +75,6 @@ export const LoginPage: React.FC = () => {
     setClientErrors({});
     dispatch(loginThunk({ email: email.trim(), password }));
   };
-
-  // const handleQuickFill = (demoEmail: string, demoPass: string) => {
-  //   dispatch(clearAuthError());
-  //   setEmail(demoEmail);
-  //   setPassword(demoPass);
-  //   setEmailTouched(false);
-  //   setPasswordTouched(false);
-  //   setClientErrors({});
-  // };
 
   const isEmailValid = emailTouched && !validateEmail(email);
   const isPasswordValid = passwordTouched && !validatePassword(password);
@@ -240,66 +231,7 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Demo Access Bar */}
-          <div className="mt-5 pt-4 border-t border-slate-100">
-            {/* <div className="flex items-center gap-1.5 mb-2.5 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-              <Sparkles className="w-3 h-3 text-blue-500" />
-              <span>Select Preset Persona</span>
-            </div> */}
-
-            {/* <div className="grid grid-cols-3 gap-2">
-              Supervisor (Owner)
-              <button
-                type="button"
-                onClick={() => handleQuickFill('samkanalytics@gmail.com', 'Admin@123')}
-                className="flex flex-col items-start p-2 bg-slate-50 hover:bg-purple-50/70 border border-slate-200 hover:border-purple-200 rounded-xl transition-all text-left cursor-pointer group"
-              >
-                <div className="flex items-center gap-1 text-purple-700 text-[11px] font-bold">
-                  <ShieldCheck className="w-3 h-3 text-purple-600" />
-                  <span>Supervisor</span>
-                </div>
-                <span className="text-[9px] text-purple-800 font-semibold mt-0.5 leading-tight">
-                  Owner · Full
-                </span>
-              </button>
-
-              Admin
-              <button
-                type="button"
-                onClick={() => handleQuickFill('sarah.admin@gridutil.com', 'Admin@123')}
-                className="flex flex-col items-start p-2 bg-slate-50 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-200 rounded-xl transition-all text-left cursor-pointer group"
-              >
-                <div className="flex items-center gap-1 text-blue-700 text-[11px] font-bold">
-                  <UserCheck className="w-3 h-3 text-blue-600" />
-                  <span>Admin</span>
-                </div>
-                <span className="text-[9px] text-slate-500 mt-0.5 leading-tight">
-                  No margin
-                </span>
-              </button>
-
-              Employee
-              <button
-                type="button"
-                onClick={() => handleQuickFill('david.field@gridutil.com', 'Admin@123')}
-                className="flex flex-col items-start p-2 bg-slate-50 hover:bg-emerald-50/70 border border-slate-200 hover:border-emerald-200 rounded-xl transition-all text-left cursor-pointer group"
-              >
-                <div className="flex items-center gap-1 text-emerald-700 text-[11px] font-bold">
-                  <UserCheck className="w-3 h-3 text-emerald-600" />
-                  <span>Employee</span>
-                </div>
-                <span className="text-[9px] text-slate-500 mt-0.5 leading-tight">
-                  No money
-                </span>
-              </button>
-            </div> */}
-          </div>
         </div>
-
-        {/* Footer info without scrolling */}
-        {/* <div className="text-center text-[11px] text-slate-400 mt-4">
-          Default Owner (Supervisor): <span className="text-slate-600 font-semibold font-mono">samkanalytics@gmail.com</span> · Password: <span className="text-slate-600 font-semibold font-mono">Admin@123</span>
-        </div> */}
       </motion.div>
     </div>
   );

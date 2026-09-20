@@ -1,4 +1,31 @@
-import * as XLSX from 'xlsx';
+// Utility to generate and download clean, RFC-4180 compliant CSV template datasets
+// Opens natively in Microsoft Excel, Google Sheets, and matches UploadModal requirements without heavy/vulnerable dependencies.
+
+const downloadCsv = (filename: string, headers: string[], rows: Record<string, any>[]) => {
+  const escapeCsv = (val: any): string => {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const csvContent = [
+    headers.map(escapeCsv).join(','),
+    ...rows.map((row) => headers.map((h) => escapeCsv(row[h] !== undefined ? row[h] : '')).join(',')),
+  ].join('\r\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 export const downloadWorkOrderTemplate = () => {
   const headers = [
@@ -11,7 +38,7 @@ export const downloadWorkOrderTemplate = () => {
     'notes', 'date_work_completed', 'post_construction_asbuilt', 'post_construction_notes'
   ];
   const sampleRow: Record<string, any> = {};
-  headers.forEach(h => { sampleRow[h] = ''; });
+  headers.forEach((h) => { sampleRow[h] = ''; });
   sampleRow._status = 'Field Check';
   sampleRow.work_order_number = '123456789';
   sampleRow.general_foreman = 'Marlon Davis';
@@ -19,6 +46,7 @@ export const downloadWorkOrderTemplate = () => {
   sampleRow.address = '7280 KATY FREEWAY, HOUSTON, TX 77080-3824';
   sampleRow._latitude = 30.0106;
   sampleRow._longitude = -95.4003;
+  sampleRow.customer_need_date = '2026-08-20';
   sampleRow.switching_required_requested = 'no';
   sampleRow.outage_required = 'no';
   sampleRow.permitting_needed = 'yes';
@@ -27,27 +55,21 @@ export const downloadWorkOrderTemplate = () => {
   sampleRow.hydrovac_needed = 'no';
   sampleRow.tree_trimming_needed = 'no';
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
-  XLSX.utils.book_append_sheet(wb, ws, 'Work Orders');
-  XLSX.writeFile(wb, 'work_order_template.xlsx');
+  downloadCsv('work_order_template.csv', headers, [sampleRow]);
 };
 
 export const downloadInvoiceTemplate = () => {
   const headers = ['Invoice #', 'Created Date', 'Status', 'PO #', 'Total', 'Unanswered Comments', 'Dispute Reason'];
   const sampleRow: Record<string, any> = {};
-  headers.forEach(h => { sampleRow[h] = ''; });
+  headers.forEach((h) => { sampleRow[h] = ''; });
   sampleRow['Invoice #'] = '9999';
   sampleRow['Created Date'] = '2026-08-20';
   sampleRow.Status = 'Unapproved';
   sampleRow['PO #'] = 'WO_121213513_99999';
-  sampleRow.Total = 4500.00;
+  sampleRow.Total = '4500.00';
   sampleRow['Unanswered Comments'] = 'false';
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
-  XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
-  XLSX.writeFile(wb, 'invoice_template.xlsx');
+  downloadCsv('invoice_template.csv', headers, [sampleRow]);
 };
 
 export const downloadTimesheetTemplate = () => {
@@ -179,11 +201,8 @@ export const downloadTimesheetTemplate = () => {
       'Total double': '00:00',
       'DT cost': 0.00,
       Benefits: 75.84,
-    }
+    },
   ];
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(sampleRows, { header: headers });
-  XLSX.utils.book_append_sheet(wb, ws, 'Timesheet');
-  XLSX.writeFile(wb, 'connecteam_timesheet_template.xlsx');
+  downloadCsv('connecteam_timesheet_template.csv', headers, sampleRows);
 };
