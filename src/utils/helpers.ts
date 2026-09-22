@@ -359,3 +359,18 @@ export const getWorkOrderReportingDate = (wo: any): string | null => {
 
   return null;
 };
+
+// Authoritative date selector for Invoices:
+// Uses the invoice's created_date or created_at column.
+export const getInvoiceDate = (inv: any): string | null => {
+  if (!inv) return null;
+  if (inv.created_date) {
+    const parsed = parseExcelDate(inv.created_date);
+    if (parsed) return parsed;
+  }
+  if (inv.created_at) {
+    const parsed = parseExcelDate(inv.created_at);
+    if (parsed) return parsed;
+  }
+  return null;
+};
