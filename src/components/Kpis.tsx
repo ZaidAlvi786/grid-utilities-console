@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store/store';
 import { saveOverrideThunk } from '../store/dbSlice';
-import { getFilterFingerprint, getWorkOrderReportingDate, calculateLaborEntryCost, formatHours } from '../utils/helpers';
+import { getFilterFingerprint, getWorkOrderReportingDate, getInvoiceDate, calculateLaborEntryCost, formatHours } from '../utils/helpers';
 import { Pencil, CheckCircle, Clock, DollarSign } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -39,13 +39,38 @@ export const Kpis: React.FC = () => {
   }, [workOrders, filters]);
 
   const filteredInvoices = useMemo(() => {
-    const woNumbers = new Set(filteredWO.map(w => w.work_order_number));
+    const woMap = new Map<string, any>();
+    workOrders.forEach((w) => {
+      if (w.work_order_number) woMap.set(String(w.work_order_number).trim(), w);
+    });
+
     return invoices.filter(i => {
-      if (!woNumbers.has(i.work_order_number || '')) return false;
+      // 1. Status filter
       if (filters.status !== 'All statuses' && i.status !== filters.status) return false;
+
+      // 2. Invoice Date filter based on created_at / created_date
+      const invDate = getInvoiceDate(i);
+      if (invDate) {
+        if (filters.startDate && invDate < filters.startDate) return false;
+        if (filters.endDate && invDate > filters.endDate) return false;
+      } else if (filters.startDate || filters.endDate) {
+        return false;
+      }
+
+      // 3. Work Order linked filters (Crew, Area, WO #)
+      const wo = i.work_order_number ? woMap.get(String(i.work_order_number).trim()) : undefined;
+      const gf = wo?.general_foreman;
+      const f = wo?.foreman;
+      const area = wo?.area;
+
+      if (filters.generalForeman !== 'All crews' && gf !== filters.generalForeman) return false;
+      if (filters.foreman.length > 0 && (!f || !filters.foreman.includes(f))) return false;
+      if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(i.work_order_number || '')) return false;
+      if (filters.area !== 'All areas' && area !== filters.area) return false;
+
       return true;
     });
-  }, [invoices, filteredWO, filters.status]);
+  }, [invoices, workOrders, filters]);
 
   // Operational stats
   const woCount = filteredWO.length;
@@ -60,18 +85,24 @@ export const Kpis: React.FC = () => {
 
   const foremanBookedDays = useMemo(() => {
     const map: Record<string, Set<string>> = {};
+    const woMap = new Map<string, any>();
+    workOrders.forEach((w) => {
+      if (w.work_order_number) woMap.set(String(w.work_order_number).trim(), w);
+    });
+
     filteredInvoices.forEach(inv => {
-      const wo = filteredWO.find(w => w.work_order_number === inv.work_order_number);
-      if (wo && inv.created_date) {
-        const f = wo.foreman;
+      const wo = inv.work_order_number ? woMap.get(String(inv.work_order_number).trim()) : undefined;
+      const invDate = getInvoiceDate(inv);
+      if (wo && invDate) {
+        const f = wo.foreman || 'Unassigned';
         if (!map[f]) map[f] = new Set();
-        map[f].add(inv.created_date);
+        map[f].add(invDate);
       }
     });
     let totalDays = 0;
     Object.values(map).forEach(set => { totalDays += set.size; });
     return totalDays;
-  }, [filteredInvoices, filteredWO]);
+  }, [filteredInvoices, workOrders]);
 
   const baseExpense = foremanBookedDays * dailyExpenseRate;
 
