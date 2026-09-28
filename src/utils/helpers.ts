@@ -91,6 +91,22 @@ export const calculateLaborEntryCost = (
   return parseFloat((regularCost + otCost + dtCost + benefitsCost).toFixed(2));
 };
 
+// Known secondary / tier labor rate mappings for frontend classification
+export interface LaborRateMapping {
+  category_name: string;
+  rate: number;
+  match_tolerance?: number;
+}
+
+export const KNOWN_SECONDARY_LABOR_RATES: LaborRateMapping[] = [
+  { category_name: 'Journeyman', rate: 54.57, match_tolerance: 0.20 },
+  { category_name: 'Journeyman', rate: 51.16, match_tolerance: 0.20 },
+  { category_name: 'Pole Truck Driver', rate: 38.31, match_tolerance: 0.20 },
+  { category_name: 'Apprentice', rate: 30.70, match_tolerance: 0.20 },
+  { category_name: 'Groundman', rate: 25.66, match_tolerance: 0.20 },
+  { category_name: 'Pole Truck Helper', rate: 17.79, match_tolerance: 0.20 },
+];
+
 // Helper to match an actual hourly rate or WO assignment to a role category
 export const classifyLaborRole = (
   hourlyRate: number,
@@ -125,6 +141,14 @@ export const classifyLaborRole = (
       const tolerance = cat.match_tolerance !== undefined ? cat.match_tolerance : 0.20;
       if (Math.abs(hourlyRate - cat.standard_rate) <= tolerance) {
         return cat.category_name;
+      }
+    }
+
+    // 3. Rate-based matching against secondary / tier rate schedules
+    for (const mapping of KNOWN_SECONDARY_LABOR_RATES) {
+      const tolerance = mapping.match_tolerance !== undefined ? mapping.match_tolerance : 0.20;
+      if (Math.abs(hourlyRate - mapping.rate) <= tolerance) {
+        return mapping.category_name;
       }
     }
   }

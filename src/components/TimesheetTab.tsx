@@ -83,8 +83,11 @@ export const TimesheetTab: React.FC = () => {
       if (filters.foreman.length > 0 && !filters.foreman.includes(f)) return false;
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(entry.work_order_number)) return false;
       if (filters.area !== 'All areas' && area !== filters.area) return false;
-      if (filters.startDate && entry.shift_date < filters.startDate) return false;
-      if (filters.endDate && entry.shift_date > filters.endDate) return false;
+      if (filters.startDate || filters.endDate) {
+        if (!entry.shift_date) return false;
+        if (filters.startDate && entry.shift_date < filters.startDate) return false;
+        if (filters.endDate && entry.shift_date > filters.endDate) return false;
+      }
 
       return (
         entry.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) ||

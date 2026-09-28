@@ -57,11 +57,13 @@ export const StatusDaysChart: React.FC = () => {
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(wo.work_order_number)) return;
       if (filters.area !== 'All areas' && wo.area !== filters.area) return;
       // Order date range filters
-      if (wo.customer_need_date) {
+      if (filters.startDate || filters.endDate) {
         const dateVal = getWorkOrderReportingDate(wo);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return;
           if (filters.endDate && dateVal > filters.endDate) return;
+        } else {
+          return;
         }
       }
 
