@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { getWorkOrderReportingDate } from '../utils/helpers';
+import { getWorkOrderReportingDate, getInvoiceDate } from '../utils/helpers';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 
@@ -14,11 +14,13 @@ export const MoneyHeldAging: React.FC = () => {
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(w.work_order_number)) return false;
       if (filters.area !== 'All areas' && w.area !== filters.area) return false;
       // Order date range filters
-      if (w.customer_need_date) {
+      if (filters.startDate || filters.endDate) {
         const dateVal = getWorkOrderReportingDate(w);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return false;
           if (filters.endDate && dateVal > filters.endDate) return false;
+        } else {
+          return false;
         }
       }
       return true;
@@ -27,6 +29,13 @@ export const MoneyHeldAging: React.FC = () => {
     const unapproved = invoices.filter(inv => {
       if (inv.status !== 'Unapproved') return false;
       if (!woNumbers.has(inv.work_order_number || '')) return false;
+      const invDate = getInvoiceDate(inv);
+      if (invDate) {
+        if (filters.startDate && invDate < filters.startDate) return false;
+        if (filters.endDate && invDate > filters.endDate) return false;
+      } else if (filters.startDate || filters.endDate) {
+        return false;
+      }
       return true;
     });
 

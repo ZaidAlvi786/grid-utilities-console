@@ -1,15 +1,49 @@
 import { z } from 'zod';
 
+export const normalizeWorkOrderStatus = (val: any): 'Work Pending' | 'Field Check' | 'Field Complete' | 'CTCC Completed' | 'Ready to Bill' => {
+  if (!val || typeof val !== 'string') return 'Work Pending';
+  const trimmed = val.trim();
+  const lower = trimmed.toLowerCase();
+  
+  if (lower === 'ready to bill' || lower.includes('ready to bill') || lower.includes('ready_to_bill') || lower.includes('ready for bill') || lower === 'billing' || lower === 'billed') {
+    return 'Ready to Bill';
+  }
+  if (lower === 'ctcc completed' || lower.includes('ctcc') || lower === 'ctcc complete') {
+    return 'CTCC Completed';
+  }
+  if (lower === 'field complete' || lower.includes('field complete') || lower === 'completed' || lower === 'complete' || lower === 'field completed') {
+    return 'Field Complete';
+  }
+  if (lower === 'field check' || lower.includes('field check') || lower.includes('check')) {
+    return 'Field Check';
+  }
+  if (lower === 'work pending' || lower.includes('pending') || lower.includes('in progress') || lower.includes('open')) {
+    return 'Work Pending';
+  }
+  if (trimmed === 'Work Pending' || trimmed === 'Field Check' || trimmed === 'Field Complete' || trimmed === 'CTCC Completed' || trimmed === 'Ready to Bill') {
+    return trimmed as any;
+  }
+  return 'Work Pending';
+};
+
 export const WorkOrderSchema = z.object({
   id: z.string().uuid().optional(),
-  work_order_number: z.union([z.number(), z.string()]).transform((val) => val.toString()),
-  status: z.enum(['Work Pending', 'Field Check', 'Field Complete', 'CTCC Completed', 'Ready to Bill']),
-  general_foreman: z.string().min(1),
-  foreman: z.string().min(1),
-  address: z.string().min(1),
-  area: z.string().optional(),
-  latitude: z.number().nullable().optional(),
-  longitude: z.number().nullable().optional(),
+  work_order_number: z.union([z.number(), z.string()]).transform((val) => val.toString().trim()),
+  status: z.any().transform((val) => normalizeWorkOrderStatus(val)).default('Work Pending'),
+  general_foreman: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'Unassigned GF' : String(val).trim())
+    .default('Unassigned GF'),
+  foreman: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'Unassigned Foreman' : String(val).trim())
+    .default('Unassigned Foreman'),
+  address: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'Pending Location' : String(val).trim())
+    .default('Pending Location'),
+  area: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'HOUSTON' : String(val).trim())
+    .default('HOUSTON'),
+  latitude: z.any().transform((val) => (val !== null && val !== undefined && !isNaN(parseFloat(val))) ? parseFloat(val) : null).optional(),
+  longitude: z.any().transform((val) => (val !== null && val !== undefined && !isNaN(parseFloat(val))) ? parseFloat(val) : null).optional(),
   customer_need_date: z.any().optional(),
   date_locates_called_in: z.any().optional(),
   locate_ticket_number: z.any().transform((val) => (val ? val.toString() : null)).nullable().optional(),
@@ -18,18 +52,18 @@ export const WorkOrderSchema = z.object({
   renewal_expiration_date: z.any().optional(),
   switching_required: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
   outage_required: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
-  outage_notes: z.string().nullable().optional(),
+  outage_notes: z.any().transform((v) => v ? String(v) : null).optional(),
   permitting_needed: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
   locked_gates: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
   traffic_control_needed: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
-  traffic_control_notes: z.string().nullable().optional(),
+  traffic_control_notes: z.any().transform((v) => v ? String(v) : null).optional(),
   hydrovac_needed: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
-  hydrovac_notes: z.string().nullable().optional(),
+  hydrovac_notes: z.any().transform((v) => v ? String(v) : null).optional(),
   tree_trimming_needed: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
-  notes: z.string().nullable().optional(),
+  notes: z.any().transform((v) => v ? String(v) : null).optional(),
   date_work_completed: z.any().optional(),
-  post_construction_asbuilt: z.string().nullable().optional(),
-  post_construction_notes: z.string().nullable().optional(),
+  post_construction_asbuilt: z.any().transform((v) => v ? String(v) : null).optional(),
+  post_construction_notes: z.any().transform((v) => v ? String(v) : null).optional(),
   created_at: z.string().optional(),
 });
 
@@ -56,7 +90,7 @@ export const InvoiceSchema = z.object({
   work_order_id: z.string().uuid().nullable().optional(),
   work_order_number: z.string().nullable().optional(),
   link_source: z.enum(['native', 'synthetic']).default('synthetic'),
-  total: z.any().transform((val) => parseFloat(val) || 0.0),
+  total: z.any().transform((val) => (val !== null && val !== undefined && !isNaN(parseFloat(val))) ? parseFloat(val) : 0.0),
   unanswered_comments: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
   dispute_reason: z.string().nullable().optional(),
   created_at: z.string().optional(),
@@ -64,14 +98,24 @@ export const InvoiceSchema = z.object({
 
 // Combine both for Joined Master validation
 export const MasterJoinedSchema = z.object({
-  work_order_number: z.union([z.number(), z.string()]).transform((val) => val.toString()),
-  status: z.enum(['Work Pending', 'Field Check', 'Field Complete', 'CTCC Completed', 'Ready to Bill']),
-  general_foreman: z.string().min(1),
-  foreman: z.string().min(1),
-  address: z.string().min(1),
-  area: z.string().optional(),
-  latitude: z.any().transform((val) => val !== null && val !== undefined ? parseFloat(val) : null).optional(),
-  longitude: z.any().transform((val) => val !== null && val !== undefined ? parseFloat(val) : null).optional(),
+  work_order_number: z.union([z.number(), z.string()]).transform((val) => val.toString().trim()),
+  status: z.any().transform((val) => normalizeWorkOrderStatus(val)).default('Work Pending'),
+  general_foreman: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'Unassigned GF' : String(val).trim())
+    .default('Unassigned GF'),
+  foreman: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'Unassigned Foreman' : String(val).trim())
+    .default('Unassigned Foreman'),
+  address: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'Pending Location' : String(val).trim())
+    .default('Pending Location'),
+  area: z.any()
+    .transform((val) => (!val || String(val).trim() === '' || String(val).trim().toLowerCase() === 'null') ? 'HOUSTON' : String(val).trim())
+    .default('HOUSTON'),
+  latitude: z.any().transform((val) => (val !== null && val !== undefined && !isNaN(parseFloat(val))) ? parseFloat(val) : null).optional(),
+  longitude: z.any().transform((val) => (val !== null && val !== undefined && !isNaN(parseFloat(val))) ? parseFloat(val) : null).optional(),
+  customer_need_date: z.any().optional(),
+  date_work_completed: z.any().optional(),
   switching_required: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
   outage_required: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
   permitting_needed: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
@@ -81,11 +125,16 @@ export const MasterJoinedSchema = z.object({
   tree_trimming_needed: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
   
   // Invoice part
-  invoice_number: z.union([z.number(), z.string()]).optional().nullable().transform((val) => val ? val.toString() : null),
-  invoice_status: z.union([InvoiceStatusEnum, z.string()]).optional().nullable(),
-  po_number: z.string().optional().nullable(),
-  total: z.any().transform((val) => val !== null && val !== undefined ? parseFloat(val) : 0.0).optional(),
-  created_date: z.any().optional().nullable(),
+  invoice_number: z.any().transform((val) => {
+    if (val === null || val === undefined) return null;
+    const str = String(val).trim();
+    if (str === '' || str === '0' || str.toLowerCase() === 'null' || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'n/a') return null;
+    return str;
+  }).optional().nullable(),
+  invoice_status: z.any().transform((val) => (val ? String(val).trim() : 'Unapproved')).optional().nullable(),
+  po_number: z.any().transform((val) => (val ? String(val).trim() : '')).optional().nullable(),
+  total: z.any().transform((val) => (val !== null && val !== undefined && !isNaN(parseFloat(val))) ? parseFloat(val) : 0.0).optional().default(0),
+  created_date: z.any().transform((val) => (val ? String(val).trim() : null)).optional().nullable(),
   unanswered_comments: z.any().transform((v) => v === true || v === 'yes' || v === 'true').optional().default(false),
 });
 

@@ -198,15 +198,29 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
             normalizedKey = normalizedKey.slice(1);
           }
 
-          if (uploadType === 'work_orders') {
-            if (
+          if (uploadType === 'work_orders' || uploadType === 'master') {
+            const lowerKey = normalizedKey.toLowerCase().replace(/[\s_-]+/g, '_');
+            if (lowerKey === 'work_order_number' || lowerKey === 'work_order_#' || lowerKey === 'work_order' || lowerKey === 'wo_#' || lowerKey === 'wo_number' || lowerKey === 'wo') normalizedKey = 'work_order_number';
+            else if (lowerKey === 'status' || lowerKey === 'work_order_status' || lowerKey === 'wo_status') normalizedKey = 'status';
+            else if (lowerKey === 'general_foreman' || lowerKey === 'gf' || lowerKey === 'general_foreman_name') normalizedKey = 'general_foreman';
+            else if (lowerKey === 'foreman' || lowerKey === 'crew_leader' || lowerKey === 'foreman_name') normalizedKey = 'foreman';
+            else if (lowerKey === 'address' || lowerKey === 'location' || lowerKey === 'job_address' || lowerKey === 'street_address') normalizedKey = 'address';
+            else if (lowerKey === 'area' || lowerKey === 'region' || lowerKey === 'territory') normalizedKey = 'area';
+            else if (lowerKey === 'invoice_#' || lowerKey === 'invoice_number' || lowerKey === 'invoice') normalizedKey = 'invoice_number';
+            else if (lowerKey === 'invoice_status') normalizedKey = 'invoice_status';
+            else if (lowerKey === 'po_#' || lowerKey === 'po_number' || lowerKey === 'po') normalizedKey = 'po_number';
+            else if (lowerKey === 'invoice_total' || (uploadType === 'master' && lowerKey === 'total')) normalizedKey = 'total';
+            else if (lowerKey === 'invoice_created_date' || lowerKey === 'invoice_date' || (uploadType === 'master' && lowerKey === 'created_date')) normalizedKey = 'created_date';
+            else if (
               normalizedKey === 'Date Work Completed' ||
               normalizedKey === 'date_work_completed' ||
               normalizedKey === 'Completion Date' ||
               normalizedKey === 'completion_date' ||
               normalizedKey === 'Completed Date' ||
               normalizedKey === 'completed_date' ||
-              normalizedKey === 'Fulcrum Completion Date'
+              normalizedKey === 'Fulcrum Completion Date' ||
+              lowerKey === 'fulcrum_completion_date' ||
+              lowerKey === 'date_work_completed'
             ) {
               normalizedKey = 'date_work_completed';
             }
@@ -235,6 +249,22 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose }) => {
           }
           normalizedRow[normalizedKey] = value;
         });
+
+        if (uploadType === 'work_orders' || uploadType === 'master') {
+          const rawWo = normalizedRow['work_order_number'] || normalizedRow['Work Order #'] || normalizedRow['WO #'] || normalizedRow['Work Order'];
+          if (
+            rawWo === null ||
+            rawWo === undefined ||
+            String(rawWo).trim() === '' ||
+            String(rawWo).trim() === '0' ||
+            String(rawWo).trim().toLowerCase() === 'null' ||
+            String(rawWo).trim().toLowerCase() === 'undefined' ||
+            String(rawWo).trim().toLowerCase() === 'n/a'
+          ) {
+            return; // Skip empty rows
+          }
+          normalizedRow['work_order_number'] = String(rawWo).trim();
+        }
 
         if (uploadType === 'invoices') {
           const invNum = normalizedRow['invoice_number'] || normalizedRow['Invoice #'];

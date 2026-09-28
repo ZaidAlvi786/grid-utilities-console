@@ -110,13 +110,13 @@ export const TimesheetTable: React.FC<TimesheetTableProps> = ({
               className="bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:bg-white focus:border-blue-500 cursor-pointer font-medium"
             >
               <option value="all">All Roles & Categories</option>
-              <option value="General Foreman">General Foreman ($58.49)</option>
-              <option value="Foreman">Foreman ($57.30)</option>
-              <option value="Journeyman">Journeyman ($53.72)</option>
-              <option value="Pole Truck Driver">Pole Truck Driver ($40.23)</option>
-              <option value="Apprentice">Apprentice ($37.60)</option>
-              <option value="Groundman">Groundman ($26.94)</option>
-              <option value="Pole Truck Helper">Pole Truck Helper ($15.00)</option>
+              <option value="General Foreman">General Foreman</option>
+              <option value="Foreman">Foreman</option>
+              <option value="Journeyman">Journeyman Lineman</option>
+              <option value="Pole Truck Driver">Pole Truck Driver</option>
+              <option value="Apprentice">Apprentice Lineman</option>
+              <option value="Groundman">Groundman</option>
+              <option value="Pole Truck Helper">Pole Truck Helper</option>
               <option value="unclassified">Unclassified Rates Only</option>
             </select>
           </div>

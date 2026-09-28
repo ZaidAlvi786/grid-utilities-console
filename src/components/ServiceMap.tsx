@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { getWorkOrderReportingDate } from '../utils/helpers';
+import { getWorkOrderReportingDate, getInvoiceDate } from '../utils/helpers';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -31,28 +31,54 @@ export const ServiceMap: React.FC = () => {
     const bookedDatesMap: Record<string, Set<string>> = {};
     const revenueMap: Record<string, number> = {};
 
+    const woMap = new Map<string, any>();
+    workOrders.forEach((w) => {
+      if (w.work_order_number) woMap.set(String(w.work_order_number).trim(), w);
+    });
+
     invoices.forEach(inv => {
       if (filters.status !== 'All statuses' && inv.status !== filters.status) return;
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(inv.work_order_number || '')) return;
-      const wo = workOrders.find(w => w.work_order_number === inv.work_order_number);
+      
+      const invDate = getInvoiceDate(inv);
+      if (invDate) {
+        if (filters.startDate && invDate < filters.startDate) return;
+        if (filters.endDate && invDate > filters.endDate) return;
+      } else if (filters.startDate || filters.endDate) {
+        return;
+      }
+
+      const wo = inv.work_order_number ? woMap.get(String(inv.work_order_number).trim()) : undefined;
       if (wo) {
+        if (filters.generalForeman !== 'All crews' && wo.general_foreman !== filters.generalForeman) return;
+        if (filters.foreman.length > 0 && !filters.foreman.includes(wo.foreman)) return;
+        if (filters.area !== 'All areas' && wo.area !== filters.area) return;
+
         const f = wo.foreman;
-        if (!bookedDatesMap[f]) bookedDatesMap[f] = new Set();
-        if (inv.created_date) {
-          bookedDatesMap[f].add(inv.created_date);
+        if (f) {
+          if (!bookedDatesMap[f]) bookedDatesMap[f] = new Set();
+          if (invDate) {
+            bookedDatesMap[f].add(invDate);
+          }
+          if (!revenueMap[f]) revenueMap[f] = 0;
+          revenueMap[f] += inv.total;
         }
-        if (!revenueMap[f]) revenueMap[f] = 0;
-        revenueMap[f] += inv.total;
       }
     });
 
     workOrders.forEach(wo => {
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(wo.work_order_number)) return;
-      if (wo.customer_need_date) {
+      if (filters.generalForeman !== 'All crews' && wo.general_foreman !== filters.generalForeman) return;
+      if (filters.foreman.length > 0 && !filters.foreman.includes(wo.foreman)) return;
+      if (filters.area !== 'All areas' && wo.area !== filters.area) return;
+
+      if (filters.startDate || filters.endDate) {
         const dateVal = getWorkOrderReportingDate(wo);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return;
           if (filters.endDate && dateVal > filters.endDate) return;
+        } else {
+          return;
         }
       }
       const gf = wo.general_foreman;

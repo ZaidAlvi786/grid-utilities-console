@@ -27,11 +27,13 @@ export const Kpis: React.FC = () => {
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(w.work_order_number)) return false;
       if (filters.area !== 'All areas' && w.area !== filters.area) return false;
       // Order date range filters
-      if (w.customer_need_date) {
+      if (filters.startDate || filters.endDate) {
         const dateVal = getWorkOrderReportingDate(w);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return false;
           if (filters.endDate && dateVal > filters.endDate) return false;
+        } else {
+          return false;
         }
       }
       return true;
@@ -123,8 +125,11 @@ export const Kpis: React.FC = () => {
       if (filters.foreman.length > 0 && !filters.foreman.includes(f)) return false;
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(entry.work_order_number)) return false;
       if (filters.area !== 'All areas' && area !== filters.area) return false;
-      if (filters.startDate && entry.shift_date < filters.startDate) return false;
-      if (filters.endDate && entry.shift_date > filters.endDate) return false;
+      if (filters.startDate || filters.endDate) {
+        if (!entry.shift_date) return false;
+        if (filters.startDate && entry.shift_date < filters.startDate) return false;
+        if (filters.endDate && entry.shift_date > filters.endDate) return false;
+      }
       return true;
     });
   }, [laborEntries, workOrders, filters]);
@@ -305,7 +310,7 @@ export const Kpis: React.FC = () => {
             </span>
           ) : (
             <span>
-              base <strong className="text-slate-700 font-mono">{formatCurrency(baseExpense)}</strong> · {foremanBookedDays} foreman-days x $5,800
+              base <strong className="text-slate-700 font-mono">{formatCurrency(baseExpense)}</strong> · {foremanBookedDays} foreman-days
             </span>
           )}
         </p>

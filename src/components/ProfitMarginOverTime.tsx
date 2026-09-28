@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { getWorkOrderReportingDate } from '../utils/helpers';
+import { getWorkOrderReportingDate, getInvoiceDate } from '../utils/helpers';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store/store';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -33,41 +33,70 @@ export const ProfitMarginOverTime: React.FC = () => {
       if (filters.workOrderNumbers && filters.workOrderNumbers.length > 0 && !filters.workOrderNumbers.includes(w.work_order_number)) return false;
       if (filters.area !== 'All areas' && w.area !== filters.area) return false;
       // Order date range filters
-      if (w.customer_need_date) {
+      if (filters.startDate || filters.endDate) {
         const dateVal = getWorkOrderReportingDate(w);
         if (dateVal) {
           if (filters.startDate && dateVal < filters.startDate) return false;
           if (filters.endDate && dateVal > filters.endDate) return false;
+        } else {
+          return false;
         }
       }
       return true;
     });
     const woNumbers = new Set(woFiltered.map(w => w.work_order_number));
 
-    const targetEnd = new Date('2026-08-18');
-    const dailyData: Record<string, { dateStr: string; dateObj: Date; revenue: number; bookedForemen: Set<string>; margin: number }> = {};
+    // Determine dynamic chart date range based on active filters
+    let startD: Date;
+    let endD: Date;
 
-    for (let i = 59; i >= 0; i--) {
-      const d = new Date(targetEnd.getTime() - i * 86400 * 1000);
-      const str = d.toISOString().split('T')[0];
+    if (filters.startDate && filters.endDate) {
+      startD = new Date(filters.startDate + 'T00:00:00');
+      endD = new Date(filters.endDate + 'T00:00:00');
+    } else if (filters.startDate) {
+      startD = new Date(filters.startDate + 'T00:00:00');
+      endD = new Date(Math.max(startD.getTime() + 30 * 86400 * 1000, new Date('2026-08-18').getTime()));
+    } else if (filters.endDate) {
+      endD = new Date(filters.endDate + 'T00:00:00');
+      startD = new Date(endD.getTime() - 59 * 86400 * 1000);
+    } else {
+      endD = new Date('2026-08-18T00:00:00');
+      startD = new Date(endD.getTime() - 59 * 86400 * 1000);
+    }
+
+    if (startD > endD) {
+      const temp = startD;
+      startD = endD;
+      endD = temp;
+    }
+
+    const dailyData: Record<string, { dateStr: string; dateObj: Date; revenue: number; bookedForemen: Set<string>; margin: number }> = {};
+    const curr = new Date(startD);
+    const maxDays = 180;
+    let daysCount = 0;
+    while (curr <= endD && daysCount < maxDays) {
+      const str = curr.toISOString().split('T')[0];
       dailyData[str] = {
         dateStr: str,
-        dateObj: d,
+        dateObj: new Date(curr),
         revenue: 0,
         bookedForemen: new Set<string>(),
         margin: 0,
       };
+      curr.setDate(curr.getDate() + 1);
+      daysCount++;
     }
 
     invoices.forEach(inv => {
        if (!woNumbers.has(inv.work_order_number || '')) return;
        if (filters.status !== 'All statuses' && inv.status !== filters.status) return;
 
-       if (inv.created_date && dailyData[inv.created_date]) {
-         const entry = dailyData[inv.created_date];
+       const invDate = getInvoiceDate(inv);
+       if (invDate && dailyData[invDate]) {
+         const entry = dailyData[invDate];
          entry.revenue += inv.total;
          const wo = woFiltered.find(w => w.work_order_number === inv.work_order_number);
-         if (wo) {
+         if (wo && wo.foreman) {
            entry.bookedForemen.add(wo.foreman);
          }
        }
