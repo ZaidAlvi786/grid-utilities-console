@@ -216,7 +216,7 @@ export const updatePasswordThunk = createAsyncThunk(
   }
 );
 
-// Invite Team Member Thunk: Uses cryptographically secure random password and Supabase signup/invite flow
+// Invite Team Member Thunk: Uses custom or cryptographically secure random password and Supabase signup/invite flow
 export const inviteTeamMemberThunk = createAsyncThunk(
   'auth/inviteTeamMember',
   async (
@@ -224,7 +224,8 @@ export const inviteTeamMemberThunk = createAsyncThunk(
       name,
       email,
       role,
-    }: { name: string; email: string; role: UserRole },
+      password,
+    }: { name: string; email: string; role: UserRole; password?: string },
     { getState, rejectWithValue }
   ) => {
     try {
@@ -236,9 +237,12 @@ export const inviteTeamMemberThunk = createAsyncThunk(
         return rejectWithValue(emailValidation);
       }
 
-      const securePassword = generateSecureRandomPassword(20);
+      const securePassword =
+        password && password.trim().length >= 6
+          ? password.trim()
+          : generateSecureRandomPassword(14);
 
-      // Attempt Supabase Auth invite / sign up without exposing password to Redux
+      // Attempt Supabase Auth invite / sign up with password
       try {
         const { error: signUpError } = await supabase.auth.signUp({
           email: cleanEmail,
@@ -296,6 +300,7 @@ export const inviteTeamMemberThunk = createAsyncThunk(
       return {
         member: newMember,
         team: updatedTeam,
+        password: securePassword,
       };
     } catch (err: any) {
       return rejectWithValue(err.message || 'Failed to send invitation');
