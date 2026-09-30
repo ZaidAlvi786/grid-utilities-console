@@ -7,6 +7,7 @@ import {
   inviteTeamMemberThunk,
   updateTeamMemberRoleThunk,
   removeTeamMemberThunk,
+  generateSecureRandomPassword,
   UserRole,
 } from '../store/authSlice';
 import { validateEmailAddress } from '../utils/helpers';
@@ -18,12 +19,17 @@ import {
   UserPlus,
   Shield,
   Check,
-  Mail,
   Send,
   Sparkles,
   Users,
   CheckCircle2,
   Trash2,
+  Key,
+  Copy,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  ExternalLink,
 } from 'lucide-react';
 
 interface UserSettingsModalProps {
@@ -55,8 +61,18 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteEmailError, setInviteEmailError] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [showInvitePassword, setShowInvitePassword] = useState(false);
   const [inviteRole, setInviteRole] = useState<UserRole>('Employee');
   const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
+  const [inviteSuccessData, setInviteSuccessData] = useState<{
+    email: string;
+    name: string;
+    role: string;
+    password: string;
+  } | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const [copiedPasswordOnly, setCopiedPasswordOnly] = useState(false);
 
   // Team Directory Management State
   const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
@@ -107,11 +123,12 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
     }
   };
 
-  // Invite member handler: Dispatches secure invitation without exposing temp password
+  // Invite member handler: Dispatches secure invitation with configured/generated password
   const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     setInviteEmailError('');
     setInviteFeedback(null);
+    setInviteSuccessData(null);
 
     if (!inviteName.trim()) return;
 
@@ -121,23 +138,53 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
       return;
     }
 
+    if (invitePassword.trim() && invitePassword.trim().length < 6) {
+      setInviteEmailError('Password must be at least 6 characters long');
+      return;
+    }
+
     const res = await dispatch(
       inviteTeamMemberThunk({
         name: inviteName.trim(),
         email: inviteEmail.trim(),
         role: inviteRole,
+        password: invitePassword.trim() || undefined,
       })
     );
 
     if (inviteTeamMemberThunk.fulfilled.match(res)) {
-      setInviteFeedback(`Invitation successfully dispatched to ${inviteEmail.trim()} via Supabase Auth.`);
+      const assignedPassword = res.payload.password || invitePassword.trim();
+      setInviteSuccessData({
+        email: inviteEmail.trim(),
+        name: inviteName.trim(),
+        role: inviteRole,
+        password: assignedPassword,
+      });
+      setInviteFeedback(`Invitation successfully sent to ${inviteEmail.trim()}.`);
       setInviteName('');
       setInviteEmail('');
+      setInvitePassword('');
       setInviteRole('Employee');
-      setTimeout(() => setInviteFeedback(null), 5000);
     } else if (inviteTeamMemberThunk.rejected.match(res)) {
       setInviteEmailError((res.payload as string) || 'Failed to send invite');
     }
+  };
+
+  const handleCopyCredentials = () => {
+    if (!inviteSuccessData) return;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://grid-console.app';
+    const message = `Welcome to Power Grid Utilities Console!\n\nYou have been invited to join the platform as a ${inviteSuccessData.role}.\n\nAccess Credentials:\n- Login URL: ${origin}\n- Email: ${inviteSuccessData.email}\n- Initial Password: ${inviteSuccessData.password}\n\nPlease log in and update your password under Settings > Password & Security.`;
+    
+    navigator.clipboard.writeText(message);
+    setCopiedInvite(true);
+    setTimeout(() => setCopiedInvite(false), 3000);
+  };
+
+  const handleCopyPasswordOnly = () => {
+    if (!inviteSuccessData) return;
+    navigator.clipboard.writeText(inviteSuccessData.password);
+    setCopiedPasswordOnly(true);
+    setTimeout(() => setCopiedPasswordOnly(false), 3000);
   };
 
   // Role change handler
@@ -429,25 +476,73 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
-                    Assigned Role
-                  </label>
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value as UserRole)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-purple-500 transition-all cursor-pointer"
-                  >
-                    <option value="Employee">Employee (Hidden money & financial metrics)</option>
-                    <option value="Admin">Admin (Invoices & expenses, no profit margins)</option>
-                    <option value="Supervisor">Supervisor (Owner) (Full owner control & all figures)</option>
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold uppercase text-slate-500">
+                        Temporary / Initial Password
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const gen = generateSecureRandomPassword(12);
+                          setInvitePassword(gen);
+                          setShowInvitePassword(true);
+                        }}
+                        className="text-[10px] font-bold text-purple-600 hover:text-purple-700 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Auto-Generate</span>
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showInvitePassword ? 'text' : 'password'}
+                        placeholder="Auto-generated if left blank"
+                        value={invitePassword}
+                        onChange={(e) => setInvitePassword(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-16 py-2 text-xs text-slate-800 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-mono"
+                      />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowInvitePassword(!showInvitePassword)}
+                          className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                          title={showInvitePassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showInvitePassword ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Minimum 6 characters. Leave empty to auto-generate a secure random password.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+                      Assigned Role
+                    </label>
+                    <select
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value as UserRole)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-purple-500 transition-all cursor-pointer"
+                    >
+                      <option value="Employee">Employee (Hidden money & financial metrics)</option>
+                      <option value="Admin">Admin (Invoices & expenses, no profit margins)</option>
+                      <option value="Supervisor">Supervisor (Owner) (Full owner control & all figures)</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-1">
                   <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                    <span>User receives an official invitation link to set up their password securely</span>
+                    <Key className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                    <span>Password and access credentials are created immediately and prepared for dispatch</span>
                   </div>
 
                   <button
@@ -461,8 +556,103 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ onClose })
                 </div>
               </form>
 
+              {/* Generated Credentials Card */}
+              {inviteSuccessData && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.98, y: 5 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50/50 border-2 border-emerald-300 rounded-2xl space-y-3 shadow-sm"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-emerald-950">Team Member Invitation Created!</h4>
+                        <p className="text-[11px] text-emerald-700">
+                          Account created for <span className="font-semibold">{inviteSuccessData.email}</span> ({inviteSuccessData.role})
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInviteSuccessData(null)}
+                      className="text-xs font-semibold text-emerald-700 hover:text-emerald-900 p-1 hover:bg-emerald-100/60 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+
+                  <div className="bg-white/90 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Initial Assigned Password
+                      </span>
+                      <div className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg inline-block select-all border border-slate-200">
+                        {inviteSuccessData.password}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyPasswordOnly}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        {copiedPasswordOnly ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-600">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Copy Password</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleCopyCredentials}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                      >
+                        {copiedInvite ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Copied Invitation!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Full Invitation</span>
+                          </>
+                        )}
+                      </button>
+
+                      <a
+                        href={`mailto:${encodeURIComponent(inviteSuccessData.email)}?subject=${encodeURIComponent(
+                          'Welcome to Power Grid Utilities - Your Access Credentials'
+                        )}&body=${encodeURIComponent(
+                          `Welcome to Power Grid Utilities Console!\n\nYou have been invited to join the platform as a ${inviteSuccessData.role}.\n\nAccess Credentials:\n- Login URL: ${
+                            typeof window !== 'undefined' ? window.location.origin : ''
+                          }\n- Email: ${inviteSuccessData.email}\n- Initial Password: ${inviteSuccessData.password}\n\nPlease log in and update your password under Settings > Password & Security.`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
+                        title="Open in Email App"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               {/* Status Banner */}
-              {(inviteFeedback || inviteSuccessMessage) && (
+              {!inviteSuccessData && (inviteFeedback || inviteSuccessMessage) && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
